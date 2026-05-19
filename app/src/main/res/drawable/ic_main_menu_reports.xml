@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Отчёты: три столбика разной высоты -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M4,19 L7,19 L7,12 L4,12 Z M9,19 L12,19 L12,8 L9,8 Z M14,19 L17,19 L17,14 L14,14 Z" />
+</vector>

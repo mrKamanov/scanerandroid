@@ -1,0 +1,60 @@
+package com.tscan.scanertestov.feature.journals
+
+/**
+ * Описание: состояние экрана журналов и текстовые подписи макета.
+ */
+data class JournalsState(
+    val title: String = "Журналы",
+    val subtitle: String = "Просмотр по классам, поиск и сводка. Данные хранятся на устройстве.",
+    val summarySectionTitle: String = "Сводка",
+    val searchSectionTitle: String = "Поиск",
+    val searchLabel: String = "Поиск по классу или ФИО",
+    val rosterSectionTitle: String = "Состав классов",
+    val dataEntrySectionTitle: String = "Наполнение журнала",
+    val dataEntryToggleShow: String = "Добавить учеников или импорт",
+    val dataEntryToggleHide: String = "Скрыть форму",
+    val classLabel: String = "Класс",
+    val surnameLabel: String = "Фамилия",
+    val nameLabel: String = "Имя",
+    val middleNameLabel: String = "Отчество (необязательно)",
+    val addButtonText: String = "Добавить ученика",
+    val templateButtonText: String = "Скачать шаблон Excel (.xlsx)",
+    val importButtonText: String = "Импорт из Excel/CSV",
+    val importHint: String = "Формат: Класс, Фамилия, Имя, Отчество — файл .xlsx или .csv",
+    val listEmptyText: String = "Журнал пуст. Импортируйте список или добавьте учеников вручную.",
+    val searchNoResultsText: String = "По запросу ничего не найдено.",
+    val statClassesLabel: String = "Классов",
+    val statStudentsLabel: String = "Учеников",
+    val renameClassAction: String = "Переименовать класс",
+    val removeStudentAction: String = "Удалить",
+    val editStudentAction: String = "Изменить",
+    val removeStudentConfirmTitle: String = "Удалить из журнала?",
+    val removeStudentConfirmHint: String = "Это действие нельзя отменить.",
+    val removeStudentConfirmPositive: String = "Удалить",
+    val removeStudentConfirmNegative: String = "Отмена",
+    val editStudentDialogTitle: String = "Данные ученика",
+    val editStudentClassHint: String = "Например: 10 И, 9 А, 11 Б",
+    val editStudentTransferHint: String =
+        "Перенос в другой класс: нажмите карандаш у ученика в списке → в поле «Класс» укажите новый класс → «Сохранить».",
+    val editStudentSaveButton: String = "Сохранить",
+    val editStudentCancelButton: String = "Отмена",
+    val editStudentDuplicateError: String = "Такой ученик уже есть в журнале.",
+    val addStudentDuplicateError: String = "Такой ученик уже есть в этом классе (в журнале).",
+    val editStudentValidationError: String = "Укажите класс, фамилию и имя.",
+    val renameClassMergedHint: String = "Класс объединён с уже существующим «%s».",
+    val renameClassDialogTitle: String = "Название класса",
+    val renameClassFieldLabel: String = "Новое название (как в журнале)",
+    val renameClassDialogSave: String = "Сохранить",
+    val renameClassDialogCancel: String = "Отмена",
+    val renameClassEmptyError: String = "Введите название класса",
+    val rosterFioHeader: String = "ФИО",
+    val expandShow: String = "Показать",
+    val expandHide: String = "Скрыть",
+)
+
+data class JournalStudent(
+    val className: String,
+    val surname: String,
+    val name: String,
+    val middleName: String? = null,
+)

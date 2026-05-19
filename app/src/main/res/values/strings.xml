@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Описание: строковые ресурсы приложения. -->
+    <string name="app_name">Сканер тестов</string>
+</resources>

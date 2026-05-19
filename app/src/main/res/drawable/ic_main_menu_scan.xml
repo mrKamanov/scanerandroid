@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Скан: углы + лист с прорезями «строк» (evenOdd) -->
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M3,3 L3,8 L5,8 L5,5 L8,5 L8,3 Z M16,3 L21,3 L21,8 L19,8 L19,5 L16,5 Z M3,16 L3,21 L8,21 L8,19 L5,19 L5,16 Z M19,16 L19,19 L16,19 L16,21 L21,21 L21,16 Z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:fillType="evenOdd"
+        android:pathData="M7,6 L17,6 L17,18 L7,18 Z M9.1,9.4 L14.9,9.4 L14.9,10.5 L9.1,10.5 Z M9.1,11.9 L14.9,11.9 L14.9,13 L9.1,13 Z M9.1,14.4 L13.5,14.4 L13.5,15.5 L9.1,15.5 Z" />
+</vector>

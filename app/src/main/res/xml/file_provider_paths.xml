@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Описание: пути для androidx.core.content.FileProvider (экспорт и «Поделиться» файлами из каталога приложения). -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <external-files-path
+        name="exported_docs"
+        path="Documents/" />
+    <files-path
+        name="internal_files"
+        path="." />
+</paths>

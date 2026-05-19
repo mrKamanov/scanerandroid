@@ -1,0 +1,17 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- Бланк с прорезями полей + карандаш -->
+    <path
+        android:fillColor="@android:color/white"
+        android:fillType="evenOdd"
+        android:pathData="M4,4.5 L13.5,4.5 L13.5,18 L4,18 Z M5.4,7.4 L12.2,7.4 L12.2,8.4 L5.4,8.4 Z M5.4,9.8 L12.2,9.8 L12.2,10.8 L5.4,10.8 Z M5.4,12.2 L10.2,12.2 L10.2,13.2 L5.4,13.2 Z M5.4,14.5 L10.8,14.5 L10.8,15.5 L5.4,15.5 Z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M15.2,3.5 L20.5,2 L22,8.5 L16.7,10 Z" />
+    <path
+        android:fillColor="@android:color/white"
+        android:pathData="M20.5,2 L22.2,1.5 L23.5,5.8 L21.8,6.3 Z" />
+</vector>

@@ -24,9 +24,15 @@ Thumbs.db
 .agent-tools/
 tmp/
 
-# Large ML artifacts at repo root (not needed for docs)
+# Large ML artifacts at repo root (training / calibration, not in APK)
 *.npy
 *.pt
 
-# Optional: uncomment if models are too large for GitHub (use Git LFS or releases)
-# app/src/main/assets/models/**/*.onnx
+# Training pipeline and datasets (local only)
+iimodel/
+
+# ONNX/TFLite in APK assets — add locally before release build (see assets/models/README.md)
+app/src/main/assets/models/**/*.onnx
+app/src/main/assets/models/**/*.tflite
+!app/src/main/assets/models/README.md
+!app/src/main/assets/models/**/dict.txt

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Рабочая тема: тот же фон окна, что и scanShellBackdrop — без вспышки при смене заставки. -->
+    <style name="Theme.ScanerTestov" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:statusBarColor">@color/scan_shell_fill</item>
+        <item name="android:navigationBarColor">@color/scan_shell_fill</item>
+        <item name="android:windowBackground">@color/scan_shell_fill</item>
+        <item name="android:colorBackground">@color/scan_shell_fill</item>
+    </style>
+
+    <!-- С момента нажатия на иконку до первого кадра Activity: фон как в приложении; галочка — в иконке. -->
+    <style name="Theme.ScanerTestov.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/scan_shell_fill</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_app_orb_logo</item>
+        <item name="windowSplashScreenIconBackgroundColor">@color/scan_shell_fill</item>
+        <item name="postSplashScreenTheme">@style/Theme.ScanerTestov</item>
+        <item name="android:statusBarColor">@color/scan_shell_fill</item>
+        <item name="android:navigationBarColor">@color/scan_shell_fill</item>
+    </style>
+</resources>
