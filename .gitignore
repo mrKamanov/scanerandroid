@@ -1,0 +1,32 @@
+# Gradle / Android
+.gradle/
+build/
+**/build/
+local.properties
+*.iml
+.idea/
+*.hprof
+.cxx/
+captures/
+.externalNativeBuild/
+
+# Keystore (never commit)
+*.jks
+*.keystore
+keystore.properties
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local / tooling
+*.log
+.agent-tools/
+tmp/
+
+# Large ML artifacts at repo root (not needed for docs)
+*.npy
+*.pt
+
+# Optional: uncomment if models are too large for GitHub (use Git LFS or releases)
+# app/src/main/assets/models/**/*.onnx
