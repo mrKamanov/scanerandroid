@@ -7,7 +7,7 @@
 **Дата вступления в силу:** 19 мая 2026 г.  
 **Последнее обновление:** 19 мая 2026 г.
 
-Ниже описано, какие данные использует приложение «Сканер тестов» и как с ними обращаются. Полный текст можно открыть в **Настройках** приложения или по ссылке в Google Play.  
+Ниже описано, какие данные использует приложение «Сканер тестов» и как с ними обращаются. Полный текст можно открыть в **Настройках** приложения или по ссылке в RuStore.  
 **English version** — [below](#privacy-policy-english).
 
 ## 1. Кратко
@@ -64,7 +64,7 @@
 - не давать разрешение камере (часть функций будет недоступна);
 - очистить данные внутри приложения (журналы, очередь), где это предусмотрено интерфейсом.
 
-По вопросам обработки данных в связи с этим приложением обращайтесь по **контактному email, указанному в карточке приложения в Google Play** (или в описании репозитория исходного кода).
+По вопросам обработки данных в связи с этим приложением обращайтесь по **контактному email, указанному в карточке приложения в RuStore** (или в описании репозитория исходного кода).
 
 ## 9. Изменения политики
 
@@ -85,7 +85,7 @@
 **Effective date:** May 19, 2026  
 **Last updated:** May 19, 2026
 
-This document explains what data the app uses and how it is handled. You can open the full text in the app **Settings** or via the link in the Google Play store listing.  
+This document explains what data the app uses and how it is handled. You can open the full text in the app **Settings** or via the link in the RuStore store listing.  
 **Russian version** — [above](#privacy-policy-russian).
 
 ## 1. Summary
@@ -142,7 +142,7 @@ You can at any time:
 - deny camera permission (some features will be unavailable);
 - clear in-app data (journals, queue) where the UI allows it.
 
-For questions about data processing related to this app, use the **support email listed on the Google Play store listing** (or in the source repository description).
+For questions about data processing related to this app, use the **support email listed on the RuStore store listing** (or in the source repository description).
 
 ## 9. Changes to this policy
 
