@@ -376,6 +376,7 @@ fun BatchResultsScreen(
                                             selected.previewBitmap,
                                             selected.sheetMarkerConfig,
                                             selected.sheetMarkerPredictions,
+                                            selected.sheetMarkerColumnFrames,
                                         ) {
                                             val base = selected.previewBitmap ?: return@remember null
                                             val cfg = selected.sheetMarkerConfig
@@ -383,7 +384,12 @@ fun BatchResultsScreen(
                                             if (!showMarkers || cfg == null || preds.isEmpty()) {
                                                 base
                                             } else {
-                                                BatchSheetAnswerMarkersOverlay.renderMarkersOnCrop(base, cfg, preds)
+                                                BatchSheetAnswerMarkersOverlay.renderMarkersOnCrop(
+                                                    base,
+                                                    cfg,
+                                                    preds,
+                                                    selected.sheetMarkerColumnFrames,
+                                                )
                                             }
                                         }
                                         sheetWithMarkers?.let { bmp ->

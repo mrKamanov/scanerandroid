@@ -1,8 +1,9 @@
 package com.tscan.scanertestov.feature.batch
 
 /**
- * Описание: ключ результата съёмки бланка для [androidx.navigation.NavController] SavedStateHandle.
+ * Описание: ключи результата съёмки бланка для [androidx.navigation.NavController] SavedStateHandle.
  */
 object BatchCaptureKeys {
-    const val RESULT_URI: String = "batch_document_capture_result_uri"
+    /** Список URI снимков (несколько подряд, пока открыта камера). */
+    const val RESULT_URIS: String = "batch_document_capture_result_uris"
 }

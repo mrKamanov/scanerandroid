@@ -14,6 +14,7 @@ internal object BatchSheetGridOverlay {
         questionsCount: Int,
         choicesCount: Int,
         columnCount: Int,
+        columnFrames: List<BatchColumnFrameGrid>? = null,
     ): Bitmap {
         val out = source.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(out)
@@ -31,13 +32,33 @@ internal object BatchSheetGridOverlay {
             style = Paint.Style.STROKE
             strokeWidth = 3f
         }
-        val innerRect = BatchInnerGridDetector.detectInnerRect(out)
+        val innerRect = BatchInnerGridDetector.detectInnerRect(out, questionsCount, choicesCount)
         val inner = FRect(
             left = innerRect.left.toFloat(),
             top = innerRect.top.toFloat(),
             right = innerRect.rightEx.toFloat(),
             bottom = innerRect.bottomEx.toFloat(),
         )
+        if (useTwoColumns && columnFrames != null) {
+            for (frame in columnFrames) {
+                val l = frame.innerLeft.toFloat()
+                val t = frame.innerTop.toFloat()
+                val r = frame.innerRight.toFloat()
+                val b = frame.innerBottom.toFloat()
+                canvas.drawRect(l, t, r, b, borderPaint)
+                drawUniformGrid(
+                    canvas = canvas,
+                    left = l,
+                    top = t,
+                    width = r - l,
+                    height = b - t,
+                    rows = frame.frameBubbleRows.coerceAtLeast(1),
+                    cols = cols,
+                    paint = gridPaint,
+                )
+            }
+            return out
+        }
         if (useTwoColumns) {
             val halfW = out.width / 2
             val leftW = halfW.coerceAtLeast(1)
@@ -48,7 +69,7 @@ internal object BatchSheetGridOverlay {
             val qLeft = (rows + 1) / 2
             val qRight = rows - qLeft
 
-            val leftInnerRect = BatchInnerGridDetector.detectInnerRect(leftHalf)
+            val leftInnerRect = BatchInnerGridDetector.detectInnerRect(leftHalf, qLeft.coerceAtLeast(1), cols)
             val leftInner = FRect(
                 left = leftInnerRect.left.toFloat(),
                 top = leftInnerRect.top.toFloat(),
@@ -68,7 +89,7 @@ internal object BatchSheetGridOverlay {
             )
 
             if (rightHalf != null && qRight > 0) {
-                val rightInnerRect = BatchInnerGridDetector.detectInnerRect(rightHalf)
+                val rightInnerRect = BatchInnerGridDetector.detectInnerRect(rightHalf, qRight.coerceAtLeast(1), cols)
                 val rightInner = FRect(
                     left = rightInnerRect.left.toFloat(),
                     top = rightInnerRect.top.toFloat(),

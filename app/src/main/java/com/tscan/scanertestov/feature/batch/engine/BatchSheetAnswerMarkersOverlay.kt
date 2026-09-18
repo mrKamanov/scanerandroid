@@ -15,6 +15,7 @@ object BatchSheetAnswerMarkersOverlay {
         sourceWithGrid: Bitmap,
         config: BatchOmrConfig,
         predictions: List<BatchCellPrediction>,
+        columnFrames: List<BatchColumnFrameGrid>? = null,
     ): Bitmap {
         val out = sourceWithGrid.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = Canvas(out)
@@ -38,6 +39,7 @@ object BatchSheetAnswerMarkersOverlay {
             questionsCount = config.questionsCount,
             choicesCount = config.choicesCount,
             columnCount = config.columnCount,
+            columnFrames = columnFrames,
         ) { cell ->
             val pred = predByCell[cell.questionIndex to cell.choiceIndex]
             val klass = pred?.klass ?: BatchCellClass.No

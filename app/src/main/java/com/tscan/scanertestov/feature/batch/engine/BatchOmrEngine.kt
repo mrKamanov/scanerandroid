@@ -6,8 +6,10 @@ package com.tscan.scanertestov.feature.batch.engine
 import android.graphics.Bitmap
 import android.content.Context
 import android.util.Log
+import com.tscan.scanertestov.feature.blankeditor.BlankBubbleLayout
 import com.tscan.scanertestov.feature.blankeditor.BlankBubbleRenderParams
 import com.tscan.scanertestov.feature.blankeditor.BlankEditorLayoutConfig
+import com.tscan.scanertestov.feature.blankeditor.BlankSheetSpec
 import com.tscan.scanertestov.feature.blankeditor.buildBlankBubbleLayout
 import com.tscan.scanertestov.feature.blankeditor.cornerMarkTipQuadLogical
 import org.opencv.android.OpenCVLoader
@@ -17,9 +19,11 @@ import org.opencv.core.Mat
 import org.opencv.core.Point
 import org.opencv.core.Rect
 import org.opencv.imgproc.Imgproc
+import kotlin.math.roundToInt
 
 internal object BatchOmrEngine {
     private const val PERF_TAG = "BatchOmrPerf"
+    private const val TAG_FRAMES = "BatchOmrFrames"
     @Volatile
     private var openCvReady: Boolean = false
 
@@ -131,7 +135,11 @@ internal object BatchOmrEngine {
                 )
             }
 
-            val contourFull = if (betweenLMat == null) {
+            val twoColumns = config.columnCount == 2
+            // Для двух колонок контур листа нужен как резерв: варп по L-ориентирам может
+            // «прижаться» как к кваду уголков, так и к кваду страницы, поэтому рамки
+            // ищутся не по логической раскладке, а прямо в самом варпе.
+            val contourFull = if (betweenLMat == null || twoColumns) {
                 BatchSheetContourDetector.findSheetContour(
                     inputBgr = bgr,
                     questionsCount = config.questionsCount,
@@ -142,85 +150,115 @@ internal object BatchOmrEngine {
             }
             val contourMs = lapMs()
 
+            var columnFrames: List<BatchColumnFrameGrid>? = null
+
             var warpMat: Mat = if (betweenLMat != null) {
-                val contourOnCrop = BatchSheetContourDetector.findSheetContour(
-                    inputBgr = betweenLMat,
-                    questionsCount = config.questionsCount,
-                    choicesCount = config.choicesCount,
-                )
-                if (contourOnCrop != null) {
-                    val w = BatchSheetWarper.warpByContour(betweenLMat, contourOnCrop)
-                    betweenLMat.release()
-                    w
-                } else {
-                    betweenLMat
-                }
-            } else {
-                when {
-                config.columnCount == 2 -> {
-                    val pair = BatchSheetContourDetector.findSheetContourPairForTwoColumns(
-                        inputBgr = bgr,
+                if (twoColumns) {
+                    val framesFromL = computeTwoColumnFramesFromWarp(
+                        warp = betweenLMat,
                         questionsCount = config.questionsCount,
                         choicesCount = config.choicesCount,
                     )
-                    if (pair == null) {
-                        if (contourFull == null) return BatchOmrResult(
-                            predictions = emptyList(),
-                            questionScores = emptyList(),
-                            fixedCells = emptyList(),
-                            contourFound = false,
-                            sheetCropBitmap = null,
+                    if (framesFromL != null) {
+                        columnFrames = framesFromL
+                        betweenLMat
+                    } else if (contourFull != null) {
+                        val w = BatchSheetWarper.warpByContour(bgr, contourFull)
+                        val framesFromPage = computeTwoColumnFramesFromWarp(
+                            warp = w,
+                            questionsCount = config.questionsCount,
+                            choicesCount = config.choicesCount,
                         )
-                        BatchSheetWarper.warpByContour(bgr, contourFull)
-                    } else {
-                        val inW = bgr.cols()
-                        val inH = bgr.rows()
-                        val baseW = minOf(inW, inH).coerceIn(280, 1600)
-                        val outW = baseW
-                        val outH = (baseW * com.tscan.scanertestov.feature.blankeditor.BlankSheetSpec.LOGICAL_HEIGHT_PX /
-                            com.tscan.scanertestov.feature.blankeditor.BlankSheetSpec.LOGICAL_WIDTH_PX)
-                            .toDouble()
-                            .toInt()
-                            .coerceAtLeast(1)
-
-                        val leftW = outW / 2
-                        val rightW = outW - leftW
-
-                        val leftWarp = BatchSheetWarper.warpByContourToSize(
-                            inputBgr = bgr,
-                            contour = pair.first,
-                            outW = leftW.coerceAtLeast(1),
-                            outH = outH,
-                        )
-                        val rightWarp = BatchSheetWarper.warpByContourToSize(
-                            inputBgr = bgr,
-                            contour = pair.second,
-                            outW = rightW.coerceAtLeast(1),
-                            outH = outH,
-                        )
-
-                        val combined = Mat(outH, outW, leftWarp.type())
-                        try {
-                            leftWarp.copyTo(combined.submat(Rect(0, 0, leftW, outH)))
-                            rightWarp.copyTo(combined.submat(Rect(leftW, 0, rightW, outH)))
-                            combined
-                        } finally {
-                            leftWarp.release()
-                            rightWarp.release()
+                        if (framesFromPage != null) {
+                            columnFrames = framesFromPage
+                            betweenLMat.release()
+                            w
+                        } else {
+                            val pair = BatchSheetContourDetector.findSheetContourPairForTwoColumns(
+                                inputBgr = bgr,
+                                questionsCount = config.questionsCount,
+                                choicesCount = config.choicesCount,
+                            )
+                            if (pair != null) {
+                                val combined = buildLegacyPairWarp(bgr, pair)
+                                betweenLMat.release()
+                                w.release()
+                                combined
+                            } else {
+                                betweenLMat.release()
+                                w
+                            }
                         }
+                    } else {
+                        val pair = BatchSheetContourDetector.findSheetContourPairForTwoColumns(
+                            inputBgr = bgr,
+                            questionsCount = config.questionsCount,
+                            choicesCount = config.choicesCount,
+                        )
+                        if (pair == null) {
+                            betweenLMat.release()
+                            return emptyContourResult()
+                        }
+                        betweenLMat.release()
+                        buildLegacyPairWarp(bgr, pair)
+                    }
+                } else {
+                    val contourOnCrop = BatchSheetContourDetector.findSheetContour(
+                        inputBgr = betweenLMat,
+                        questionsCount = config.questionsCount,
+                        choicesCount = config.choicesCount,
+                    )
+                    if (contourOnCrop != null) {
+                        val w = BatchSheetWarper.warpByContour(betweenLMat, contourOnCrop)
+                        betweenLMat.release()
+                        w
+                    } else {
+                        betweenLMat
                     }
                 }
+            } else {
+                when {
+                    twoColumns -> {
+                        if (contourFull == null) {
+                            // Последний резерв: попарный поиск колонок.
+                            val pair = BatchSheetContourDetector.findSheetContourPairForTwoColumns(
+                                inputBgr = bgr,
+                                questionsCount = config.questionsCount,
+                                choicesCount = config.choicesCount,
+                            )
+                            if (pair == null) return emptyContourResult()
+                            buildLegacyPairWarp(bgr, pair)
+                        } else {
+                            val w = BatchSheetWarper.warpByContour(bgr, contourFull)
+                            val framesFromPage = computeTwoColumnFramesFromWarp(
+                                warp = w,
+                                questionsCount = config.questionsCount,
+                                choicesCount = config.choicesCount,
+                            )
+                            if (framesFromPage != null) {
+                                columnFrames = framesFromPage
+                                w
+                            } else {
+                                val pair = BatchSheetContourDetector.findSheetContourPairForTwoColumns(
+                                    inputBgr = bgr,
+                                    questionsCount = config.questionsCount,
+                                    choicesCount = config.choicesCount,
+                                )
+                                if (pair != null) {
+                                    val combined = buildLegacyPairWarp(bgr, pair)
+                                    w.release()
+                                    combined
+                                } else {
+                                    w
+                                }
+                            }
+                        }
+                    }
 
-                else -> {
-                    if (contourFull == null) return BatchOmrResult(
-                        predictions = emptyList(),
-                        questionScores = emptyList(),
-                        fixedCells = emptyList(),
-                        contourFound = false,
-                        sheetCropBitmap = null,
-                    )
-                    BatchSheetWarper.warpByContour(bgr, contourFull)
-                }
+                    else -> {
+                        if (contourFull == null) return emptyContourResult()
+                        BatchSheetWarper.warpByContour(bgr, contourFull)
+                    }
                 }
             }
 
@@ -231,7 +269,7 @@ internal object BatchOmrEngine {
             }
 
             val warpMs = lapMs()
-            val result = classifyWarpedSheet(context, bitmap, config, warpMat)
+            val result = classifyWarpedSheet(context, bitmap, config, warpMat, columnFrames)
             val totalMs = (System.nanoTime() - tWall0) / 1_000_000L
             Log.i(
                 PERF_TAG,
@@ -250,6 +288,7 @@ internal object BatchOmrEngine {
         sourceBitmap: Bitmap,
         config: BatchOmrConfig,
         warpMat: Mat,
+        columnFrames: List<BatchColumnFrameGrid>? = null,
     ): BatchOmrResult {
         try {
             val sheetCropRaw = Bitmap.createBitmap(warpMat.cols(), warpMat.rows(), Bitmap.Config.ARGB_8888).also {
@@ -260,6 +299,7 @@ internal object BatchOmrEngine {
                 questionsCount = config.questionsCount,
                 choicesCount = config.choicesCount,
                 columnCount = config.columnCount,
+                columnFrames = columnFrames,
             )
             sheetCropRaw.recycle()
             val cells = BatchCellGridExtractor.extractCells(
@@ -267,6 +307,7 @@ internal object BatchOmrEngine {
                 questionsCount = config.questionsCount,
                 choicesCount = config.choicesCount,
                 columnCount = config.columnCount,
+                columnFrames = columnFrames,
             )
             val predictions = try {
                 BatchCellClassifier.classifyCells(cells, context)
@@ -280,11 +321,168 @@ internal object BatchOmrEngine {
                 fixedCells = predictions.filter { it.klass == BatchCellClass.Fixed },
                 contourFound = true,
                 sheetCropBitmap = sheetCrop,
+                columnFrames = columnFrames,
             )
         } finally {
             warpMat.release()
         }
     }
+
+    private fun buildLegacyPairWarp(
+        bgr: Mat,
+        pair: Pair<Array<Point>, Array<Point>>,
+    ): Mat {
+        val inW = bgr.cols()
+        val inH = bgr.rows()
+        val baseW = minOf(inW, inH).coerceIn(280, 1600)
+        val outW = baseW
+        val outH = (baseW * BlankSheetSpec.LOGICAL_HEIGHT_PX / BlankSheetSpec.LOGICAL_WIDTH_PX)
+            .toDouble()
+            .toInt()
+            .coerceAtLeast(1)
+        val leftW = outW / 2
+        val rightW = outW - leftW
+
+        val leftWarp = BatchSheetWarper.warpByContourToSize(bgr, pair.first, leftW.coerceAtLeast(1), outH)
+        val rightWarp = BatchSheetWarper.warpByContourToSize(bgr, pair.second, rightW.coerceAtLeast(1), outH)
+
+        val combined = Mat(outH, outW, leftWarp.type())
+        try {
+            leftWarp.copyTo(combined.submat(Rect(0, 0, leftW, outH)))
+            rightWarp.copyTo(combined.submat(Rect(leftW, 0, rightW, outH)))
+            return combined
+        } finally {
+            leftWarp.release()
+            rightWarp.release()
+        }
+    }
+
+    /**
+     * Двухколоночная геометрия: рамки колонок ищутся прямо в [warp] как пара
+     * одинаковых прямоугольников рядом. Это устойчиво к тому, к какому кваду
+     * «прижался» варп (L-ориентиры или страница) — хрупкие аффинные допущения
+     * о логической раскладке не используются.
+     */
+    private fun computeTwoColumnFramesFromWarp(
+        warp: Mat,
+        questionsCount: Int,
+        choicesCount: Int,
+    ): List<BatchColumnFrameGrid>? {
+        val pair = BatchSheetContourDetector.findSheetContourPairForTwoColumns(
+            inputBgr = warp,
+            questionsCount = questionsCount,
+            choicesCount = choicesCount,
+        ) ?: return null
+        val warpW = warp.cols()
+        val warpH = warp.rows()
+        val warpBmp = Bitmap.createBitmap(warpW, warpH, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(warp, warpBmp)
+        try {
+            return buildFrameGridsFromPair(
+                warpBmp = warpBmp,
+                warpW = warpW,
+                warpH = warpH,
+                pair = pair,
+                questionsCount = questionsCount,
+                choicesCount = choicesCount,
+            )
+        } finally {
+            warpBmp.recycle()
+        }
+    }
+
+    private fun buildFrameGridsFromPair(
+        warpBmp: Bitmap,
+        warpW: Int,
+        warpH: Int,
+        pair: Pair<Array<Point>, Array<Point>>,
+        questionsCount: Int,
+        choicesCount: Int,
+    ): List<BatchColumnFrameGrid> {
+        val q1 = (questionsCount + 1) / 2
+        val q2 = questionsCount - q1
+        val left = if (pair.first.minOf { it.x } <= pair.second.minOf { it.x }) pair.first else pair.second
+        val right = if (left === pair.first) pair.second else pair.first
+        val sides = listOf(
+            FrameSide(pts = left, questionStart = 0, questionCount = q1, frameBubbleRows = q1),
+            FrameSide(
+                pts = right,
+                questionStart = q1,
+                questionCount = q2,
+                frameBubbleRows = if (q2 < q1) q2 + 1 else q2,
+            ),
+        )
+        val out = ArrayList<BatchColumnFrameGrid>(sides.size)
+        for ((index, side) in sides.withIndex()) {
+            if (side.questionCount <= 0) continue
+
+            val minX = side.pts.minOf { it.x }.roundToInt()
+            val minY = side.pts.minOf { it.y }.roundToInt()
+            val maxX = side.pts.maxOf { it.x }.roundToInt()
+            val maxY = side.pts.maxOf { it.y }.roundToInt()
+            val bw = (maxX - minX).coerceAtLeast(2)
+            val bh = (maxY - minY).coerceAtLeast(2)
+            val marginX = (bw * 0.04).roundToInt()
+            val marginY = (bh * 0.04).roundToInt()
+            val cx = (minX - marginX).coerceIn(0, (warpW - 2).coerceAtLeast(0))
+            val cy = (minY - marginY).coerceIn(0, (warpH - 2).coerceAtLeast(0))
+            val cw = (bw + 2 * marginX).coerceAtMost(warpW - cx)
+            val ch = (bh + 2 * marginY).coerceAtMost(warpH - cy)
+
+            val crop = Bitmap.createBitmap(warpBmp, cx, cy, cw, ch)
+            val local = try {
+                BatchInnerGridDetector.detectInnerRect(crop, side.questionCount, choicesCount)
+            } finally {
+                crop.recycle()
+            }
+
+            val found = BatchInnerGridRect(
+                left = cx + local.left,
+                top = cy + local.top,
+                rightEx = cx + local.rightEx,
+                bottomEx = cy + local.bottomEx,
+            )
+
+            val insetX = (cw * 0.04).roundToInt()
+            val insetY = (ch * 0.04).roundToInt()
+            val fallback = BatchInnerGridRect(
+                left = (cx + insetX).coerceIn(0, warpW - 2),
+                top = (cy + insetY).coerceIn(0, warpH - 2),
+                rightEx = (cx + cw - insetX).coerceIn(2, warpW),
+                bottomEx = (cy + ch - insetY).coerceIn(2, warpH),
+            )
+
+            val cropArea = cw.toDouble() * ch.toDouble()
+            val foundArea = found.width.toDouble() * found.height.toDouble()
+            val valid = found.width >= 10 && found.height >= 10 &&
+                foundArea >= 0.45 * cropArea && foundArea <= 1.1 * cropArea
+
+            val inner = if (valid) found else fallback
+            out += BatchColumnFrameGrid(
+                questionStart = side.questionStart,
+                questionCount = side.questionCount,
+                frameBubbleRows = side.frameBubbleRows,
+                innerLeft = inner.left,
+                innerTop = inner.top,
+                innerRight = inner.rightEx,
+                innerBottom = inner.bottomEx,
+            )
+            Log.d(
+                TAG_FRAMES,
+                "col$index q${side.questionStart}+${side.questionCount} bbox=[$minX,$minY,$bw,$bh] " +
+                    "found=${if (valid) found else "rejected"} fallback=[${fallback.left},${fallback.top},${fallback.rightEx},${fallback.bottomEx}] " +
+                    "inner=[${inner.left},${inner.top},${inner.rightEx},${inner.bottomEx}]",
+            )
+        }
+        return out
+    }
+
+    private data class FrameSide(
+        val pts: Array<Point>,
+        val questionStart: Int,
+        val questionCount: Int,
+        val frameBubbleRows: Int,
+    )
 
     private fun emptyContourResult() = BatchOmrResult(
         predictions = emptyList(),

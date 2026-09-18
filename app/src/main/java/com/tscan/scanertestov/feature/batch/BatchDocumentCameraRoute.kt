@@ -38,10 +38,12 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import android.view.Surface
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
@@ -61,6 +63,7 @@ import androidx.navigation.NavHostController
 import com.tscan.scanertestov.feature.mainmenu.components.mainMenuBubbleGradient
 import com.tscan.scanertestov.feature.realtime.ui.RealtimeBubbleIconButton
 private const val TAG = "BatchDocumentCamera"
+private const val BATCH_CAMERA_CROP_MAX_DIM = 4096
 
 @Composable
 fun BatchDocumentCameraRoute(navController: NavHostController) {
@@ -113,6 +116,8 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
     }
 
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
+    var shotsAdded by remember { mutableIntStateOf(0) }
+    var guideGeom by remember { mutableStateOf<IntArray?>(null) }
 
     DisposableEffect(lifecycleOwner, previewView) {
         val cameraProviderFuture = ProcessCameraProvider.getInstance(context)
@@ -124,9 +129,11 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
                 val preview = Preview.Builder().build().also {
                     it.setSurfaceProvider(previewView.getSurfaceProvider())
                 }
+                val rotation = previewView.display?.rotation ?: Surface.ROTATION_0
                 val capture =
                     ImageCapture.Builder()
                         .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+                        .setTargetRotation(rotation)
                         .build()
                 imageCapture = capture
                 val selector = CameraSelector.DEFAULT_BACK_CAMERA
@@ -159,7 +166,10 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
             factory = { previewView },
             modifier = Modifier.fillMaxSize(),
         )
-        BatchDocumentCameraFrameOverlay(modifier = Modifier.fillMaxSize())
+        BatchDocumentCameraFrameOverlay(
+            modifier = Modifier.fillMaxSize(),
+            onGuideGeometry = { vw, vh, mp -> guideGeom = intArrayOf(vw, vh, mp) },
+        )
         IconButton(
             onClick = { navController.popBackStack() },
             modifier = Modifier
@@ -181,7 +191,12 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
             shape = MaterialTheme.shapes.medium,
         ) {
             Text(
-                text = "Вместите чёрную рамку бланка в белый контур. Держите телефон параллельно листу.",
+                text = buildString {
+                    append("Вместите чёрную рамку бланка в белый контур. Держите телефон параллельно листу.")
+                    if (shotsAdded > 0) {
+                        append(" Снято: $shotsAdded. «Назад» — добавить все в очередь.")
+                    }
+                },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White,
                 modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -199,12 +214,41 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
                         mainExecutor,
                         object : ImageCapture.OnImageSavedCallback {
                             override fun onImageSaved(output: ImageCapture.OutputFileResults) {
-                                Handler(Looper.getMainLooper()).post {
-                                    navController.previousBackStackEntry
-                                        ?.savedStateHandle
-                                        ?.set(BatchCaptureKeys.RESULT_URI, uri.toString())
-                                    navController.popBackStack()
+                                val geom = guideGeom
+                                val worker = Thread {
+                                    try {
+                                        if (geom != null) {
+                                            val bmp = decodeUprightSampled(file, BATCH_CAMERA_CROP_MAX_DIM)
+                                            if (bmp != null) {
+                                                val cropped = cropCameraShotByGuide(bmp, geom[0], geom[1], geom[2])
+                                                if (cropped !== bmp) {
+                                                    val ok = writeJpegOverwrite(file, cropped)
+                                                    Log.i(
+                                                        TAG,
+                                                        "shot cropped ${bmp.width}x${bmp.height} -> " +
+                                                            "${cropped.width}x${cropped.height} ok=$ok",
+                                                    )
+                                                }
+                                                bmp.recycle()
+                                            }
+                                        }
+                                    } catch (t: Throwable) {
+                                        Log.w(TAG, "crop skipped, keep full shot", t)
+                                    }
+                                    Handler(Looper.getMainLooper()).post {
+                                        val handle = navController.previousBackStackEntry?.savedStateHandle
+                                        if (handle != null) {
+                                            val prev = handle.get<ArrayList<String>>(BatchCaptureKeys.RESULT_URIS)
+                                            val next = ArrayList<String>(prev?.size?.plus(1) ?: 1)
+                                            if (prev != null) next.addAll(prev)
+                                            next.add(uri.toString())
+                                            handle[BatchCaptureKeys.RESULT_URIS] = next
+                                        }
+                                        shotsAdded++
+                                    }
                                 }
+                                worker.isDaemon = true
+                                worker.start()
                             }
 
                             override fun onError(exception: ImageCaptureException) {
@@ -237,27 +281,22 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
     }
 }
 
-private const val SHEET_W_TO_H = 595f / 842f
-
 @Composable
-private fun BatchDocumentCameraFrameOverlay(modifier: Modifier = Modifier) {
+private fun BatchDocumentCameraFrameOverlay(
+    modifier: Modifier = Modifier,
+    onGuideGeometry: (viewW: Int, viewH: Int, marginPx: Int) -> Unit = { _, _, _ -> },
+) {
     val guide = Color.White.copy(alpha = 0.9f)
     Canvas(modifier) {
         val w = size.width
         val h = size.height
         val margin = 28.dp.toPx()
-        val maxW = (w - margin * 2f).coerceAtLeast(40f)
-        val maxH = (h - margin * 2f).coerceAtLeast(40f)
-        var boxW = maxW
-        var boxH = boxW / SHEET_W_TO_H
-        if (boxH > maxH) {
-            boxH = maxH
-            boxW = boxH * SHEET_W_TO_H
-        }
-        val left = (w - boxW) / 2f
-        val top = (h - boxH) / 2f
-        val right = left + boxW
-        val bottom = top + boxH
+        onGuideGeometry(w.toInt(), h.toInt(), margin.toInt())
+        val box = a4GuideBox(w, h, margin)
+        val left = box[0]
+        val top = box[1]
+        val right = box[2]
+        val bottom = box[3]
 
         val hole = RoundRect(
             rect = Rect(left, top, right, bottom),

@@ -13,6 +13,25 @@ data class BatchCellPrediction(
     val confidence: Float,
 )
 
+/**
+ * Описание: детерминированная геометрия одного столбца бланка после выпрямления.
+ * [innerLeft]/[innerTop]/[innerRight]/[innerBottom] заданы в пикселях warp-изображения.
+ * [questionCount] — сколько реальных вопросов в столбце, [frameBubbleRows] — сколько
+ * строк кружков нарисовано в рамке (включая возможную пустую строку), это шаг сетки.
+ */
+data class BatchColumnFrameGrid(
+    val questionStart: Int,
+    val questionCount: Int,
+    val frameBubbleRows: Int,
+    val innerLeft: Int,
+    val innerTop: Int,
+    val innerRight: Int,
+    val innerBottom: Int,
+) {
+    val width: Int get() = innerRight - innerLeft
+    val height: Int get() = innerBottom - innerTop
+}
+
 data class BatchOmrConfig(
     val questionsCount: Int,
     val choicesCount: Int,
@@ -35,6 +54,7 @@ data class BatchOmrResult(
     val fixedCells: List<BatchCellPrediction>,
     val contourFound: Boolean,
     val sheetCropBitmap: Bitmap? = null,
+    val columnFrames: List<BatchColumnFrameGrid>? = null,
 ) {
     val correctCount: Int get() = questionScores.count { it.correct }
     val incorrectCount: Int get() = questionScores.size - correctCount

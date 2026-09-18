@@ -226,6 +226,7 @@ private fun buildResultEntries(
         questionWrongTotal = questionWrongTotal,
         sheetMarkerPredictions = adjustedPredictions,
         sheetMarkerConfig = item.config,
+        sheetMarkerColumnFrames = omr.columnFrames,
         reportQuestionScores = scores,
         reportVariant = item.detectedVariant,
         reportStudentSurname = item.detectedStudentSurname,

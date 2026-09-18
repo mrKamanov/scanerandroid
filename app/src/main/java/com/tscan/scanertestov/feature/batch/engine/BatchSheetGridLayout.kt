@@ -23,6 +23,7 @@ internal object BatchSheetGridLayout {
         columnCount: Int,
         questionIndex: Int,
         choiceIndex: Int,
+        columnFrames: List<BatchColumnFrameGrid>? = null,
     ): BatchSheetGridCellRect? {
         var found: BatchSheetGridCellRect? = null
         forEachCell(
@@ -30,6 +31,7 @@ internal object BatchSheetGridLayout {
             questionsCount = questionsCount,
             choicesCount = choicesCount,
             columnCount = columnCount,
+            columnFrames = columnFrames,
         ) { cell ->
             if (cell.questionIndex == questionIndex && cell.choiceIndex == choiceIndex) {
                 found = cell
@@ -43,12 +45,13 @@ internal object BatchSheetGridLayout {
         questionsCount: Int,
         choicesCount: Int,
         columnCount: Int,
+        columnFrames: List<BatchColumnFrameGrid>? = null,
         block: (BatchSheetGridCellRect) -> Unit,
     ) {
         val rows = questionsCount.coerceAtLeast(1)
         val cols = choicesCount.coerceAtLeast(1)
         val useTwoColumns = columnCount == 2
-        val inner = BatchInnerGridDetector.detectInnerRect(bitmap)
+        val inner = BatchInnerGridDetector.detectInnerRect(bitmap, questionsCount, choicesCount)
         val innerLeft = inner.left.toFloat()
         val innerTop = inner.top.toFloat()
         val innerRight = inner.rightEx.toFloat()
@@ -68,6 +71,24 @@ internal object BatchSheetGridLayout {
             )
             return
         }
+
+        if (columnFrames != null) {
+            for (frame in columnFrames) {
+                forEachUniformGrid(
+                    left = frame.innerLeft.toFloat(),
+                    top = frame.innerTop.toFloat(),
+                    width = frame.width.toFloat(),
+                    height = frame.height.toFloat(),
+                    questionStart = frame.questionStart,
+                    rows = frame.questionCount,
+                    cols = cols,
+                    block = block,
+                    pitchRows = frame.frameBubbleRows,
+                )
+            }
+            return
+        }
+
         val halfW = bitmap.width / 2
         val leftW = halfW.coerceAtLeast(1)
         val rightW = (bitmap.width - leftW).coerceAtLeast(0)
@@ -75,7 +96,7 @@ internal object BatchSheetGridLayout {
         val qRight = rows - qLeft
 
         val leftHalf = Bitmap.createBitmap(bitmap, 0, 0, leftW, bitmap.height)
-        val leftInnerRect = BatchInnerGridDetector.detectInnerRect(leftHalf)
+        val leftInnerRect = BatchInnerGridDetector.detectInnerRect(leftHalf, qLeft.coerceAtLeast(1), cols)
         leftHalf.recycle()
         val leftInner = object {
             val left = leftInnerRect.left.toFloat()
@@ -97,7 +118,7 @@ internal object BatchSheetGridLayout {
 
         if (rightW > 0 && qRight > 0) {
             val rightHalf = Bitmap.createBitmap(bitmap, leftW, 0, rightW, bitmap.height)
-            val rightInnerRect = BatchInnerGridDetector.detectInnerRect(rightHalf)
+            val rightInnerRect = BatchInnerGridDetector.detectInnerRect(rightHalf, qRight.coerceAtLeast(1), cols)
             rightHalf.recycle()
             val rightInner = object {
                 val left = rightInnerRect.left.toFloat()
@@ -128,13 +149,14 @@ internal object BatchSheetGridLayout {
         rows: Int,
         cols: Int,
         block: (BatchSheetGridCellRect) -> Unit,
+        pitchRows: Int = rows,
     ) {
         val safeRows = rows.coerceAtLeast(1)
         val safeCols = cols.coerceAtLeast(1)
         val iw = width.toInt().coerceAtLeast(1)
         val ih = height.toInt().coerceAtLeast(1)
         val cellW = iw / safeCols
-        val cellH = ih / safeRows
+        val cellH = ih / pitchRows.coerceAtLeast(1)
         if (cellW <= 0 || cellH <= 0) return
         for (r in 0 until safeRows) {
             for (c in 0 until safeCols) {

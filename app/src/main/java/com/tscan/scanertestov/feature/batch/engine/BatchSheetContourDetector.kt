@@ -138,6 +138,7 @@ internal object BatchSheetContourDetector {
                 val cy: Double,
                 val top: Double,
                 val bottom: Double,
+                val height: Double,
             )
 
             fun polygonArea(points: Array<Point>): Double {
@@ -173,22 +174,30 @@ internal object BatchSheetContourDetector {
                     cy = cy,
                     top = top,
                     bottom = bottom,
+                    height = bottom - top,
                 )
             }.sortedByDescending { it.area }
 
             val topK = candidates.take(6)
             var bestPair: Pair<Cand, Cand>? = null
             var bestScore = Double.NEGATIVE_INFINITY
+            val minColumnHeight = inputBgr.rows() * 0.18
 
             for (i in 0 until topK.size) {
                 for (j in i + 1 until topK.size) {
                     val a = topK[i]
                     val b = topK[j]
+                    if (a.height < minColumnHeight || b.height < minColumnHeight) continue
+
                     val xDiff = kotlin.math.abs(a.cx - b.cx)
                     if (xDiff < inputBgr.cols() * 0.15) continue
 
+                    val avgH = (a.height + b.height) / 2.0
+                    if (kotlin.math.abs(a.top - b.top) > avgH * 0.15) continue
+                    if (kotlin.math.abs(a.bottom - b.bottom) > avgH * 0.15) continue
+
                     val yDiff = kotlin.math.abs(a.cy - b.cy)
-                    val ySpan = kotlin.math.max(a.bottom - a.top, b.bottom - b.top).coerceAtLeast(1.0)
+                    val ySpan = kotlin.math.max(a.height, b.height).coerceAtLeast(1.0)
                     if (yDiff > ySpan * 0.35) continue
 
                     val areaRatio = (a.area / b.area).coerceAtLeast(b.area / a.area)

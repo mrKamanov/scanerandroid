@@ -50,12 +50,19 @@ fun BatchProcessingRoute(navController: NavHostController) {
     val context = LocalContext.current
     val appContext = context.applicationContext
     val repository = remember(appContext) { BatchCriteriaRepository(appContext) }
+    val batchNavEntry = remember(navController) {
+        navController.getBackStackEntry(AppDestinations.BATCH_PROCESSING)
+    }
+    val restoredState = remember(repository, batchNavEntry) {
+        BatchProcessingPersistence.restore(batchNavEntry.savedStateHandle)
+            ?.copy(savedCriteria = repository.getAll())
+            ?: BatchProcessingState(savedCriteria = repository.getAll())
+    }
     var state by remember {
-        mutableStateOf(
-            BatchProcessingState(
-                savedCriteria = repository.getAll()
-            )
-        )
+        mutableStateOf(restoredState)
+    }
+    LaunchedEffect(batchNavEntry, state) {
+        BatchProcessingPersistence.save(batchNavEntry.savedStateHandle, state)
     }
     var nextWorkId by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
@@ -210,58 +217,82 @@ fun BatchProcessingRoute(navController: NavHostController) {
         }
     }
 
-    val batchNavEntry = remember(navController) {
-        navController.getBackStackEntry(AppDestinations.BATCH_PROCESSING)
-    }
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestBatchState by rememberUpdatedState(state)
 
-    fun applyCameraCaptureUri(uri: Uri) {
+    fun applyCameraCaptureUris(uris: List<Uri>) {
+        if (uris.isEmpty()) return
         var cur = latestBatchState
-        val uriStr = uri.toString()
-        if (cur.workItems.any { it.contentUri == uriStr }) {
-            state = cur.copy(statusMessage = "Этот снимок уже в очереди")
-            return
-        }
-        val id = "w-${nextWorkId++}"
-        val displayName = resolveBatchImageDisplayName(context, uri)
-        val item = BatchWorkItem(
-            id = id,
-            title = "Работа №${cur.workItems.size + 1}",
-            displayName = displayName,
-            autoRecognitionRequested = cur.autoRecognitionEnabled,
-            subtitle = buildWorkSubtitle(
-                source = BatchWorkSource.Camera,
+        val previewBefore = cur.previewWorkId
+        val addedItems = mutableListOf<BatchWorkItem>()
+        var skipped = 0
+        var workItems = cur.workItems
+        for (uri in uris) {
+            val uriStr = uri.toString()
+            if (workItems.any { it.contentUri == uriStr }) {
+                skipped++
+                continue
+            }
+            val id = "w-${nextWorkId++}"
+            val displayName = resolveBatchImageDisplayName(context, uri)
+            val item = BatchWorkItem(
+                id = id,
+                title = "Работа №${workItems.size + 1}",
                 displayName = displayName,
                 autoRecognitionRequested = cur.autoRecognitionEnabled,
-                isDetecting = cur.autoRecognitionEnabled,
-                detectedVariant = null,
-                surname = null,
-                name = null,
-            ),
-            contentUri = uriStr,
-            source = BatchWorkSource.Camera,
-            status = BatchWorkStatus.Queued,
-            isVariantDetecting = cur.autoRecognitionEnabled,
-        )
-        val withNew = renumberWorkTitles(cur.workItems + item)
+                subtitle = buildWorkSubtitle(
+                    source = BatchWorkSource.Camera,
+                    displayName = displayName,
+                    autoRecognitionRequested = cur.autoRecognitionEnabled,
+                    isDetecting = cur.autoRecognitionEnabled,
+                    detectedVariant = null,
+                    surname = null,
+                    name = null,
+                ),
+                contentUri = uriStr,
+                source = BatchWorkSource.Camera,
+                status = BatchWorkStatus.Queued,
+                isVariantDetecting = cur.autoRecognitionEnabled,
+            )
+            workItems = workItems + item
+            addedItems += item
+        }
+        if (addedItems.isEmpty()) {
+            state = cur.copy(statusMessage = "Эти снимки уже в очереди")
+            return
+        }
+        val withNew = renumberWorkTitles(workItems)
+        val msg = when {
+            addedItems.size == 1 && skipped == 0 ->
+                addedSingleWorkMessage(
+                    itemTitle = withNew.last().title,
+                    autoRecognitionEnabled = cur.autoRecognitionEnabled,
+                )
+            else ->
+                "Добавлено с камеры: ${addedItems.size}" +
+                    (if (skipped > 0) " · пропущено дублей: $skipped" else "") +
+                    (if (cur.autoRecognitionEnabled) " · распознаём…" else "")
+        }
         state = cur.copy(
             workItems = withNew,
-            previewWorkId = cur.previewWorkId ?: item.id,
-            statusMessage = addedSingleWorkMessage(
-                itemTitle = withNew.last().title,
-                autoRecognitionEnabled = cur.autoRecognitionEnabled,
-            ),
+            previewWorkId = previewBefore ?: addedItems.first().id,
+            statusMessage = msg,
         )
-        if (cur.autoRecognitionEnabled) enqueueAutoRecognition(item.id, uri)
+        if (cur.autoRecognitionEnabled) {
+            addedItems.forEach { item ->
+                enqueueAutoRecognition(item.id, Uri.parse(item.contentUri))
+            }
+        }
     }
 
     DisposableEffect(batchNavEntry, lifecycleOwner) {
-        val liveData = batchNavEntry.savedStateHandle.getLiveData<String?>(BatchCaptureKeys.RESULT_URI)
-        val observer = Observer<String?> { uriStr ->
-            if (uriStr.isNullOrEmpty()) return@Observer
-            batchNavEntry.savedStateHandle.remove<String>(BatchCaptureKeys.RESULT_URI)
-            applyCameraCaptureUri(Uri.parse(uriStr))
+        val liveData =
+            batchNavEntry.savedStateHandle.getLiveData<ArrayList<String>>(BatchCaptureKeys.RESULT_URIS)
+        val observer = Observer<ArrayList<String>?> { list ->
+            if (list.isNullOrEmpty()) return@Observer
+            val snapshot = ArrayList(list)
+            batchNavEntry.savedStateHandle.remove<ArrayList<String>>(BatchCaptureKeys.RESULT_URIS)
+            applyCameraCaptureUris(snapshot.map { Uri.parse(it) })
         }
         liveData.observe(lifecycleOwner, observer)
         onDispose {

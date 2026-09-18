@@ -15,6 +15,7 @@ internal object BatchCellGridExtractor {
         questionsCount: Int,
         choicesCount: Int,
         columnCount: Int,
+        columnFrames: List<BatchColumnFrameGrid>? = null,
     ): List<Triple<Int, Int, Mat>> {
         if (questionsCount <= 0 || choicesCount <= 0) return emptyList()
         if (columnCount != 1 && columnCount != 2) return emptyList()
@@ -23,7 +24,7 @@ internal object BatchCellGridExtractor {
 
         val out = mutableListOf<Triple<Int, Int, Mat>>()
         if (columnCount == 1) {
-            val inner = BatchInnerGridDetector.detectInnerRect(preview)
+            val inner = BatchInnerGridDetector.detectInnerRect(preview, questionsCount, choicesCount)
             appendUniformGridCells(
                 out = out,
                 warpBgr = warpBgr,
@@ -39,6 +40,25 @@ internal object BatchCellGridExtractor {
             return out
         }
 
+        if (columnFrames != null) {
+            for (frame in columnFrames) {
+                appendUniformGridCells(
+                    out = out,
+                    warpBgr = warpBgr,
+                    questionStart = frame.questionStart,
+                    rows = frame.questionCount,
+                    cols = choicesCount,
+                    left = frame.innerLeft,
+                    top = frame.innerTop,
+                    rightEx = frame.innerRight,
+                    bottomEx = frame.innerBottom,
+                    pitchRows = frame.frameBubbleRows,
+                )
+            }
+            preview.recycle()
+            return out
+        }
+
         val halfW = preview.width / 2
         val leftW = halfW.coerceAtLeast(1)
         val rightW = (preview.width - leftW).coerceAtLeast(0)
@@ -46,7 +66,11 @@ internal object BatchCellGridExtractor {
         val qRight = questionsCount - qLeft
 
         val leftPreview = Bitmap.createBitmap(preview, 0, 0, leftW, preview.height)
-        val leftInnerRect = BatchInnerGridDetector.detectInnerRect(leftPreview)
+        val leftInnerRect = BatchInnerGridDetector.detectInnerRect(
+            leftPreview,
+            qLeft.coerceAtLeast(1),
+            choicesCount,
+        )
         leftPreview.recycle()
 
         appendUniformGridCells(
@@ -63,7 +87,11 @@ internal object BatchCellGridExtractor {
 
         if (rightW > 0 && qRight > 0) {
             val rightPreview = Bitmap.createBitmap(preview, leftW, 0, rightW, preview.height)
-            val rightInnerRect = BatchInnerGridDetector.detectInnerRect(rightPreview)
+            val rightInnerRect = BatchInnerGridDetector.detectInnerRect(
+                rightPreview,
+                qRight.coerceAtLeast(1),
+                choicesCount,
+            )
             rightPreview.recycle()
 
             appendUniformGridCells(
@@ -92,12 +120,14 @@ internal object BatchCellGridExtractor {
         top: Int,
         rightEx: Int,
         bottomEx: Int,
+        pitchRows: Int = rows,
     ) {
         if (rows <= 0 || cols <= 0) return
         val width = (rightEx - left).coerceAtLeast(1)
         val height = (bottomEx - top).coerceAtLeast(1)
+        val pitch = pitchRows.coerceAtLeast(1)
         val cellW = width / cols
-        val cellH = height / rows
+        val cellH = height / pitch
         if (cellW <= 0 || cellH <= 0) return
         for (r in 0 until rows) {
             val y0 = top + r * cellH

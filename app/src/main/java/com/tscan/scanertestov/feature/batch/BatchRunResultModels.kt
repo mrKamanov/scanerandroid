@@ -5,6 +5,7 @@ package com.tscan.scanertestov.feature.batch
  */
 import android.graphics.Bitmap
 import com.tscan.scanertestov.feature.batch.engine.BatchCellPrediction
+import com.tscan.scanertestov.feature.batch.engine.BatchColumnFrameGrid
 import com.tscan.scanertestov.feature.batch.engine.BatchOmrConfig
 import com.tscan.scanertestov.feature.batch.engine.BatchOmrResult
 import com.tscan.scanertestov.feature.batch.engine.BatchQuestionScore
@@ -56,6 +57,7 @@ data class BatchResultEntryState(
     val questionWrongTotal: Int = 0,
     val sheetMarkerPredictions: List<BatchCellPrediction> = emptyList(),
     val sheetMarkerConfig: BatchOmrConfig? = null,
+    val sheetMarkerColumnFrames: List<BatchColumnFrameGrid>? = null,
     val reportQuestionScores: List<BatchQuestionScore> = emptyList(),
     val reportVariant: Int? = null,
     val reportStudentSurname: String? = null,
