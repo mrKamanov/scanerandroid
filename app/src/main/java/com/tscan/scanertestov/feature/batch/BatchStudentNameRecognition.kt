@@ -65,6 +65,7 @@ fun recognizeStudentNameFromBitmap(
             questionCount = questionCount,
             optionCount = optionCount,
             columnCount = columnCount,
+            context = context,
         )
         try {
             recognizeStudentNameFromNameCropMat(context, crop, journalRoster)
@@ -91,6 +92,13 @@ fun recognizeStudentNameFromNameCropMat(
         return BatchStudentNameRecognitionResult(error = err)
     }
     var raw = ""
+    if (isGridNameCrop(nameCrop)) {
+        return try {
+            recognizeStudentNameFromGridCrop(context, nameCrop, journalRoster)
+        } catch (e: Exception) {
+            BatchStudentNameRecognitionResult(error = e.message ?: "Ошибка распознавания имени")
+        }
+    }
     return try {
         val result = recognizeStudentNameByHalves(nameCrop)
         raw = result.rawText
@@ -359,3 +367,42 @@ private fun String.toCyrillicLookalikes(): String {
     return sb.toString()
 }
 
+
+
+/**
+ * Чтение имени из вырезки, сделанной по найденной сетке: ячейки известны точно, поэтому
+ * каждая читается за один проход, только русскими буквами, и сверяется со словарём
+ * по правдоподобию модели ([BatchNameLexicon]). Затем — сверка с журналом, если он есть.
+ */
+private fun recognizeStudentNameFromGridCrop(
+    context: Context,
+    nameCrop: Mat,
+    journalRoster: List<JournalStudent>,
+): BatchStudentNameRecognitionResult {
+    val (left, right) = splitGridNameCrop(nameCrop)
+    try {
+        val pS = EslavPpOcrV5RecEngine.recognizeProbs(left)
+        val pN = EslavPpOcrV5RecEngine.recognizeProbs(right)
+        val (gS, cS) = EslavPpOcrV5RecEngine.greedyCyrillic(pS)
+        val (gN, cN) = EslavPpOcrV5RecEngine.greedyCyrillic(pN)
+        val surname = BatchNameLexicon.pick(pS, gS, BatchNameLexicon.surnames(context))
+        val name = BatchNameLexicon.pick(pN, gN, BatchNameLexicon.forenames(context))
+        val confidence = listOf(cS, cN).filter { it > 0f }.let { if (it.isEmpty()) 0f else it.average().toFloat() }
+        val snap = JournalRosterNameMatcher.snapToRoster(
+            roster = journalRoster,
+            surname = surname,
+            name = name,
+            confidence = confidence,
+        )
+        return BatchStudentNameRecognitionResult(
+            surname = snap.surname,
+            name = snap.name,
+            journalClassName = snap.matchedClassName,
+            confidence = confidence,
+            rawText = "$gS | $gN",
+        )
+    } finally {
+        left.release()
+        right.release()
+    }
+}

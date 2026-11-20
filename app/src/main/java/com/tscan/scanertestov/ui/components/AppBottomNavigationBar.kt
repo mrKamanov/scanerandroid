@@ -4,6 +4,7 @@ package com.tscan.scanertestov.ui.components
  * Описание: нижняя панель быстрого доступа к основным разделам приложения.
  */
 import androidx.annotation.DrawableRes
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -48,8 +49,8 @@ private data class BottomBarItem(
     val paletteIndex: Int,
 )
 
-private val BubbleBarMutedTop = Color(0xFF5C6F86)
-private val BubbleBarMutedBottom = Color(0xFF3D5268)
+private val BubbleBarMutedTop = Color(0xFFE4DDCF)
+private val BubbleBarMutedBottom = Color(0xFFE4DDCF)
 
 private val bottomBarItems = listOf(
     BottomBarItem(AppDestinations.MAIN_MENU, "Главная", iconRes = null, paletteIndex = 3),
@@ -73,7 +74,7 @@ fun AppBottomNavigationBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(Color.White.copy(alpha = 0.12f)),
+                .background(Scrapbook.Ink.copy(alpha = 0.12f)),
         )
         Row(
             modifier = Modifier
@@ -115,7 +116,7 @@ fun AppBottomNavigationBar(
                             contentDescription = "${item.label}. ${if (selected) "Текущий раздел" else "Перейти"}",
                             topColor = top,
                             bottomColor = bottom,
-                            borderColor = Color.White.copy(alpha = borderAlpha),
+                            borderColor = Scrapbook.Ink.copy(alpha = borderAlpha),
                             size = 50.dp,
                             interactionSource = interactionSource,
                         ) {
@@ -124,14 +125,14 @@ fun AppBottomNavigationBar(
                                     imageVector = Icons.Filled.Home,
                                     contentDescription = null,
                                     modifier = Modifier.size(26.dp),
-                                    tint = Color.White,
+                                    tint = Scrapbook.Ink,
                                 )
                             } else {
                                 Icon(
                                     painter = painterResource(item.iconRes),
                                     contentDescription = null,
                                     modifier = Modifier.size(26.dp),
-                                    tint = Color.White,
+                                    tint = Scrapbook.Ink,
                                 )
                             }
                         }
@@ -141,9 +142,9 @@ fun AppBottomNavigationBar(
                         text = item.label,
                         style = MaterialTheme.typography.labelSmall,
                         color = if (selected) {
-                            Color(0xFFE8F2FA)
+                            Scrapbook.Ink
                         } else {
-                            Color(0xFFB0C4D6)
+                            Scrapbook.InkMuted
                         },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

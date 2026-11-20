@@ -20,6 +20,16 @@ data class BatchRunItemResult(
     val detectedJournalClassName: String? = null,
     val omr: BatchOmrResult? = null,
     val error: String? = null,
+    /** Путь к JPEG выпрямленного бланка на диске (полный кадр грузится только при просмотре). */
+    val sheetImagePath: String? = null,
+    /** Миниатюра для списка результатов (~240 px), держится в памяти. */
+    val thumbnail: Bitmap? = null,
+    /** Картинка места для имени с бланка (подпись ученика). */
+    val nameCropPath: String? = null,
+    /** Откуда ученик: «7 И · по коду №2». */
+    val studentNote: String? = null,
+    /** Что не сходится: вариант не тот, что выдан; код не выдавался по тесту. */
+    val warning: String? = null,
 )
 
 data class BatchFixedCellUiItem(
@@ -29,6 +39,8 @@ data class BatchFixedCellUiItem(
     val questionIndex: Int,
     val choiceIndex: Int,
     val includeAsAnswer: Boolean?,
+    /** Решено приложением (очевидный случай, ✎); учитель может изменить. */
+    val autoDecided: Boolean = false,
 )
 
 data class BatchResultDetailRow(
@@ -47,12 +59,16 @@ data class BatchResultEntryState(
     val layoutLine: String? = null,
     val details: List<String> = emptyList(),
     val previewBitmap: Bitmap? = null,
+    /** Полный кадр бланка на диске для детального просмотра. */
+    val sheetImagePath: String? = null,
     val grade: Int? = null,
     val percent: Float? = null,
     val scoreCorrect: Int? = null,
     val scoreTotal: Int? = null,
     val correctionsTotal: Int = 0,
     val correctionsUnresolved: Int = 0,
+    /** Сколько исправлений решено автоматически (✎). */
+    val correctionsAuto: Int = 0,
     val detailRows: List<BatchResultDetailRow> = emptyList(),
     val questionWrongTotal: Int = 0,
     val sheetMarkerPredictions: List<BatchCellPrediction> = emptyList(),
@@ -66,6 +82,14 @@ data class BatchResultEntryState(
     val reportStrictScoring: Boolean = true,
     val reportPartialCompletedCount: Int = 0,
     val reportHasMultiChoiceQuestions: Boolean = false,
+    val reportAnswerKey: List<Set<Int>> = emptyList(),
+    val reportChoicesCount: Int = 0,
+    /** Картинка места для имени с бланка (подпись) — для «Чья работа?». */
+    val nameCropPath: String? = null,
+    /** Имя указал учитель вручную. */
+    val nameAssignedManually: Boolean = false,
+    val studentNote: String? = null,
+    val warning: String? = null,
 )
 
 internal fun fixedCellKey(itemIndex: Int, prediction: BatchCellPrediction): String =

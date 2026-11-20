@@ -3,7 +3,9 @@ package com.tscan.scanertestov.feature.batch.components
 /**
  * Описание: секция параметров проверки и управления пресетами эталона.
  */
+import com.tscan.scanertestov.ui.components.ShellBubblePrimaryButtonRow
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -163,22 +165,14 @@ fun BatchParametersSection(
             ) {
                 val saveInteraction = remember { MutableInteractionSource() }
                 val savePal = mainMenuBubbleGradient(1)
-                RealtimeBubbleIconButton(
+                ShellBubblePrimaryButtonRow(
+                    text = state.saveCriteriaButtonText,
                     onClick = { onAction(BatchProcessingAction.SaveCriteriaPreset) },
-                    contentDescription = state.saveCriteriaButtonText,
-                    topColor = savePal.first,
-                    bottomColor = savePal.second,
-                    size = 64.dp,
                     enabled = !state.isProcessing && !hasDuplicateDraftName,
-                    interactionSource = saveInteraction,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Save,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(30.dp),
-                    )
-                }
+                    paletteIndex = 1,
+                    fillMaxWidth = true,
+                    leading = { Icon(Icons.Filled.Save, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                )
             }
 
             Row(
@@ -238,7 +232,7 @@ fun BatchParametersSection(
                                         Icon(
                                             imageVector = Icons.Filled.FileDownload,
                                             contentDescription = null,
-                                            tint = Color.White,
+                                            tint = Scrapbook.Ink,
                                             modifier = Modifier.size(22.dp),
                                         )
                                     }
@@ -256,7 +250,7 @@ fun BatchParametersSection(
                                         Icon(
                                             imageVector = Icons.Filled.Delete,
                                             contentDescription = null,
-                                            tint = Color.White,
+                                            tint = Scrapbook.Ink,
                                             modifier = Modifier.size(22.dp),
                                         )
                                     }

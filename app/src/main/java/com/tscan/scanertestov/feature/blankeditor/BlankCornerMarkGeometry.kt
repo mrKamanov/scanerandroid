@@ -32,6 +32,17 @@ internal fun cornerMarkDrawParams(layout: BlankBubbleLayout): CornerMarkDrawPara
     return CornerMarkDrawParams(l, t, r, b, o, arm)
 }
 
+/**
+ * На сколько уголки-ориентиры выступают за рамку с кружками (в логических единицах, без масштаба бланка).
+ * Берётся наибольшая возможная длина уголка — так рамка с уголками гарантированно помещается на лист.
+ */
+internal fun cornerMarkOutset(layout: BlankBubbleLayout): Float {
+    val br = blankBubbleLayoutBoundingRect(layout)
+    val rp = layout.renderParams
+    val o = max(6f, rp.borderWidthPx * 0.95f + 3f)
+    return o + cornerMarkArmForLayout(br.right - br.left, br.bottom - br.top, rp)
+}
+
 private fun cornerMarkArmForLayout(boundW: Float, boundH: Float, renderParams: BlankBubbleRenderParams): Float {
     val maxBy = min(boundW, boundH) * 0.2f
     val fromBubble = renderParams.bubbleSizePx * 0.4f

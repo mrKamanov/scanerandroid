@@ -239,6 +239,7 @@ fun RealtimeScanScreen(
                             bitmap = rotated,
                             questionsCount = s.questionsCount,
                             choicesCount = s.choicesCount,
+                            columnCount = s.columnCount,
                         )
                         val preview = RealtimePreviewPipeline.processFrameWithOpenCV(
                             inputBitmap = rotated,
@@ -258,15 +259,24 @@ fun RealtimeScanScreen(
                         if (rotated !== raw) {
                             raw.recycle()
                         }
+                        // Копии кадра делаем здесь, в потоке анализа: раньше две полные копии
+                        // на каждый кадр создавались в главном потоке и давали подтормаживания превью.
+                        val sheetCopy = if (contourFound && sheetContour != null) {
+                            processed.copy(processed.config ?: Bitmap.Config.ARGB_8888, false)
+                        } else {
+                            null
+                        }
+                        val rawCopy = if (sheetCopy != null) rotated else null
+                        if (rawCopy == null && rotated !== processed) rotated.recycle()
                         mainExecutor.execute {
                             overlayBitmap = processed
                             ui = ui.copy(contourDetected = contourFound)
-                            if (contourFound && sheetContour != null) {
-                                lastSheetBitmap =
-                                    processed.copy(processed.config ?: Bitmap.Config.ARGB_8888, false)
-                                lastRawCameraBitmap?.recycle()
-                                lastRawCameraBitmap =
-                                    rotated.copy(rotated.config ?: Bitmap.Config.ARGB_8888, false)
+                            if (sheetCopy != null && rawCopy != null && sheetContour != null) {
+                                lastSheetBitmap = sheetCopy
+                                lastRawCameraBitmap?.let { old ->
+                                    if (old !== frozenRawForOmr) old.recycle()
+                                }
+                                lastRawCameraBitmap = rawCopy
                                 lastSheetContour = RealtimeSheetContour.copy(sheetContour)
                             } else {
                                 lastSheetBitmap = null
@@ -299,6 +309,8 @@ fun RealtimeScanScreen(
         cameraProviderFuture.addListener(listener, mainExecutor)
         onDispose {
             imageAnalysis?.clearAnalyzer()
+            // Поток анализа создавался на каждый вход в экран и никогда не завершался.
+            analysisExecutor.shutdown()
             camera = null
             if (bound) {
                 try {
@@ -356,6 +368,16 @@ fun RealtimeScanScreen(
                     answerKey = padAnswerKey(ui.answerKey, ui.questionsCount),
                     strictScoring = ui.strictScoring,
                 )
+                if (!result.contourFound) {
+                    // Лучше честно попросить переснять, чем показать неверную оценку.
+                    ui = ui.copy(
+                        isProcessing = false,
+                        isPaused = false,
+                        errorMessage = "Сетка бланка не найдена. Снимите бланк целиком, ровнее, без пальцев и бликов на рамке.",
+                    )
+                    Toast.makeText(context, "Бланк не узнан — попробуйте ещё раз", Toast.LENGTH_LONG).show()
+                    return@launch
+                }
                 val crop = result.sheetCropBitmap
                 if (crop != null) {
                     val previousOverlay = overlayBitmap
@@ -403,7 +425,7 @@ fun RealtimeScanScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .scanShellBackdrop(),
+            .background(Color(0xFF16222C)), // экран камеры остаётся тёмным
     ) {
         Column(
             modifier = Modifier

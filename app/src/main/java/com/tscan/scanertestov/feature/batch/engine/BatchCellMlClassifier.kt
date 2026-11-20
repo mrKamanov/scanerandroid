@@ -41,7 +41,16 @@ internal object BatchCellMlClassifier {
     fun classify(cellBgr: Mat, context: Context): Pair<BatchCellClass, Float>? =
         classifyBatch(listOf(cellBgr), context)?.firstOrNull()
 
-    fun classifyBatch(cells: List<Mat>, context: Context): List<Pair<BatchCellClass, Float>?>? {
+    private val lastProbs = ArrayList<FloatArray>()
+
+    /** Порог уверенности из настроек: ниже него клетка помечается «исправлено» (на проверку). */
+    fun confidenceThreshold(context: Context): Float = AppSettingsStore.getOmrMlConfidenceThreshold(context.applicationContext)
+
+    fun classifyBatch(
+        cells: List<Mat>,
+        context: Context,
+        probsOut: MutableList<FloatArray>? = null,
+    ): List<Pair<BatchCellClass, Float>?>? {
         if (cells.isEmpty()) return emptyList()
         val app = context.applicationContext
         val variant = AppSettingsStore.getInferenceModel(app)
@@ -54,11 +63,39 @@ internal object BatchCellMlClassifier {
         val out = ArrayList<Pair<BatchCellClass, Float>?>(cells.size)
         try {
             synchronized(lock) {
+                lastProbs.clear()
                 val localSession = session ?: return null
                 val inName = inputName ?: return null
                 val outName = outputName ?: return null
                 val localEnv = env ?: return null
-                for (cell in cells) {
+                // Одна прогонка на весь бланк (у моделей динамическая размерность батча) —
+                // раньше было по вызову на каждую ячейку.
+                val batched = runCatching {
+                    lastProbs.clear()
+                    val n = cells.size
+                    val plane = 3 * inputSize * inputSize
+                    val all = FloatArray(n * plane)
+                    for ((i, cell) in cells.withIndex()) {
+                        Imgproc.resize(cell, resized, Size(inputSize.toDouble(), inputSize.toDouble()))
+                        preprocessBgrToChw(resized, inputSize, chw)
+                        System.arraycopy(chw, 0, all, i * plane, plane)
+                    }
+                    OnnxTensor.createTensor(
+                        localEnv,
+                        FloatBuffer.wrap(all),
+                        longArrayOf(n.toLong(), 3, inputSize.toLong(), inputSize.toLong()),
+                    ).use { tin ->
+                        localSession.run(mapOf(inName to tin)).use { result ->
+                            @Suppress("UNCHECKED_CAST")
+                            val raw = (result.get(outName).get() as OnnxTensor).value as Array<FloatArray>
+                            raw.map { val pr = softmax(it); lastProbs.add(pr); probsToClass(pr, confidenceThreshold) }
+                        }
+                    }
+                }.onFailure { Log.w(TAG, "Пакетный инференс не удался, по одной ячейке: ${it.message}") }.getOrNull()
+                if (batched != null && batched.size == cells.size) {
+                    out.addAll(batched)
+                    probsOut?.addAll(lastProbs)
+                } else for (cell in cells) {
                     out += try {
                         Imgproc.resize(cell, resized, Size(inputSize.toDouble(), inputSize.toDouble()))
                         preprocessBgrToChw(resized, inputSize, chw)
@@ -114,9 +151,10 @@ internal object BatchCellMlClassifier {
                 val cachedModel = copyAssetToCache(context, variant.assetRelativePath, variant)
                 val localEnv = env ?: OrtEnvironment.getEnvironment().also { env = it }
                 val opts = OrtSession.SessionOptions().apply {
+                    // Два потока: на четырёх телефон подключает слабые ядра и считает медленнее (замер 0.94 с против 0.74 с).
                     setIntraOpNumThreads(2)
                     setInterOpNumThreads(1)
-                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.BASIC_OPT)
+                    setOptimizationLevel(OrtSession.SessionOptions.OptLevel.ALL_OPT)
                 }
                 session?.close()
                 val newSession = localEnv.createSession(cachedModel.absolutePath, opts)

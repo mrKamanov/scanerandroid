@@ -14,5 +14,8 @@ fun handleBatchResultsAction(navController: NavHostController, action: BatchResu
         is BatchResultsAction.SendWorkToReports -> Unit
         is BatchResultsAction.MarkFixedAsAnswered -> Unit
         is BatchResultsAction.MarkFixedAsEmpty -> Unit
+        is BatchResultsAction.AssignStudent -> Unit
+        is BatchResultsAction.RemoveWorkFromReports -> Unit
+        BatchResultsAction.DuplicateKeepExisting, BatchResultsAction.DuplicateReplace, BatchResultsAction.DuplicateOtherStudent, BatchResultsAction.AssignRequestHandled -> Unit
     }
 }

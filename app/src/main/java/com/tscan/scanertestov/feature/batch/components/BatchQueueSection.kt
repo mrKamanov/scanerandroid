@@ -3,13 +3,18 @@ package com.tscan.scanertestov.feature.batch.components
 /**
  * Описание: секция очереди работ для пакетной обработки.
  */
+import com.tscan.scanertestov.ui.components.ShellBubblePrimaryButtonRow
 import androidx.compose.foundation.background
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
@@ -70,8 +75,9 @@ fun BatchQueueSection(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                // Высота ряда — по самой высокой кнопке, обе кнопки тянутся до неё: всегда одинаковые.
+                modifier = Modifier.fillMaxWidth().height(IntrinsicSize.Min),
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 val camInteraction = remember { MutableInteractionSource() }
@@ -79,46 +85,34 @@ fun BatchQueueSection(
                 val camPalette = mainMenuBubbleGradient(0)
                 val galleryPalette = mainMenuBubbleGradient(1)
                 Box(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    RealtimeBubbleIconButton(
-                        onClick = { onAction(BatchProcessingAction.CaptureByCamera) },
-                        contentDescription = state.captureButtonText,
-                        topColor = camPalette.first,
-                        bottomColor = camPalette.second,
-                        size = 64.dp,
-                        enabled = !state.isProcessing,
-                        interactionSource = camInteraction,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.PhotoCamera,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(30.dp),
-                        )
-                    }
+                    ShellBubblePrimaryButtonRow(
+                    modifier = Modifier.fillMaxHeight(),
+                    compact = true,
+                    text = state.captureButtonText,
+                    onClick = { onAction(BatchProcessingAction.CaptureByCamera) },
+                    enabled = !state.isProcessing,
+                    paletteIndex = 0,
+                    fillMaxWidth = true,
+                    leading = { Icon(Icons.Filled.PhotoCamera, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                )
                 }
                 Box(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).fillMaxHeight(),
                     contentAlignment = Alignment.Center,
                 ) {
-                    RealtimeBubbleIconButton(
-                        onClick = { onAction(BatchProcessingAction.LoadFromGallery) },
-                        contentDescription = state.loadButtonText,
-                        topColor = galleryPalette.first,
-                        bottomColor = galleryPalette.second,
-                        size = 64.dp,
-                        enabled = !state.isProcessing,
-                        interactionSource = galleryInteraction,
-                    ) {
-                        Icon(
-                            imageVector = Icons.Filled.PhotoLibrary,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(30.dp),
-                        )
-                    }
+                    ShellBubblePrimaryButtonRow(
+                    modifier = Modifier.fillMaxHeight(),
+                    compact = true,
+                    text = state.loadButtonText,
+                    onClick = { onAction(BatchProcessingAction.LoadFromGallery) },
+                    enabled = !state.isProcessing,
+                    paletteIndex = 4,
+                    fillMaxWidth = true,
+                    leading = { Icon(Icons.Filled.PhotoLibrary, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                )
                 }
             }
             Row(
@@ -149,12 +143,14 @@ fun BatchQueueSection(
             }
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
+                // Надпись берёт оставшееся место и переносится сама — кнопка не сжимается (крупный шрифт).
+                com.tscan.scanertestov.ui.components.FitWordsText(
                     text = "Добавлено работ: ${state.workItems.size}",
-                    style = MaterialTheme.typography.labelLarge
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.weight(1f),
                 )
                 ShellBubbleTextChip(
                     text = if (allSelected) "Снять выделение" else "Выделить все",

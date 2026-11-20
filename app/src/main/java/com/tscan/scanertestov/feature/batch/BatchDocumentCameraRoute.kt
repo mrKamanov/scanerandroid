@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.camera.core.CameraSelector
@@ -56,6 +57,34 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import androidx.compose.ui.viewinterop.AndroidView
 import com.tscan.scanertestov.ui.scanShellBackdrop
 import androidx.core.content.ContextCompat
@@ -117,6 +146,21 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
 
     var imageCapture by remember { mutableStateOf<ImageCapture?>(null) }
     var shotsAdded by remember { mutableIntStateOf(0) }
+    // Обратная связь при съёмке: вспышка сразу после нажатия, счётчик «сохраняется»,
+    // миниатюра последнего снимка и плашка «Снято — наводите на следующий».
+    var shotsPending by remember { mutableIntStateOf(0) }
+    var lastThumb by remember { mutableStateOf<android.graphics.Bitmap?>(null) }
+    var confirmTick by remember { mutableIntStateOf(0) }
+    var confirmVisible by remember { mutableStateOf(false) }
+    val flash = remember { Animatable(0f) }
+    val scope = rememberCoroutineScope()
+    val haptic = LocalHapticFeedback.current
+    LaunchedEffect(confirmTick) {
+        if (confirmTick == 0) return@LaunchedEffect
+        confirmVisible = true
+        delay(1800)
+        confirmVisible = false
+    }
     var guideGeom by remember { mutableStateOf<IntArray?>(null) }
 
     DisposableEffect(lifecycleOwner, previewView) {
@@ -193,9 +237,6 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
             Text(
                 text = buildString {
                     append("Вместите чёрную рамку бланка в белый контур. Держите телефон параллельно листу.")
-                    if (shotsAdded > 0) {
-                        append(" Снято: $shotsAdded. «Назад» — добавить все в очередь.")
-                    }
                 },
                 style = MaterialTheme.typography.bodySmall,
                 color = Color.White,
@@ -207,6 +248,15 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
         RealtimeBubbleIconButton(
             onClick = {
                 imageCapture?.let { cap ->
+                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                    shotsPending++
+                    scope.launch {
+                        flash.snapTo(0.75f)
+                        flash.animateTo(0f, tween(320))
+                    }
+                    // Запоминаем получателя сразу: если пользователь нажмёт «Назад», пока снимок
+                    // ещё обрезается, previousBackStackEntry уже будет указывать на другой экран.
+                    val targetHandle = navController.previousBackStackEntry?.savedStateHandle
                     val (file, uri) = createBatchCameraImageUri(context)
                     val opts = ImageCapture.OutputFileOptions.Builder(file).build()
                     cap.takePicture(
@@ -235,8 +285,9 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
                                     } catch (t: Throwable) {
                                         Log.w(TAG, "crop skipped, keep full shot", t)
                                     }
+                                    val thumb = runCatching { decodeUprightSampled(file, 320) }.getOrNull()
                                     Handler(Looper.getMainLooper()).post {
-                                        val handle = navController.previousBackStackEntry?.savedStateHandle
+                                        val handle = targetHandle
                                         if (handle != null) {
                                             val prev = handle.get<ArrayList<String>>(BatchCaptureKeys.RESULT_URIS)
                                             val next = ArrayList<String>(prev?.size?.plus(1) ?: 1)
@@ -245,6 +296,9 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
                                             handle[BatchCaptureKeys.RESULT_URIS] = next
                                         }
                                         shotsAdded++
+                                        shotsPending = (shotsPending - 1).coerceAtLeast(0)
+                                        if (thumb != null) lastThumb = thumb
+                                        confirmTick++
                                     }
                                 }
                                 worker.isDaemon = true
@@ -253,9 +307,15 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
 
                             override fun onError(exception: ImageCaptureException) {
                                 Log.e(TAG, "Capture failed", exception)
-                                Handler(Looper.getMainLooper()).post {
-                                    navController.popBackStack()
-                                }
+                                file.delete()
+                                shotsPending = (shotsPending - 1).coerceAtLeast(0)
+                                // Раньше ошибка одного кадра закрывала камеру (а при запоздалом
+                                // срабатывании — и сам экран пакета). Теперь просто сообщаем.
+                                Toast.makeText(
+                                    context,
+                                    "Не удалось сделать снимок, попробуйте ещё раз",
+                                    Toast.LENGTH_SHORT,
+                                ).show()
                             }
                         },
                     )
@@ -276,6 +336,95 @@ fun BatchDocumentCameraRoute(navController: NavHostController) {
                 contentDescription = null,
                 tint = Color.White,
                 modifier = Modifier.size(36.dp),
+            )
+        }
+        // Счётчик и последний снимок — слева от кнопки; «Готово» — справа.
+        if (shotsAdded > 0 || shotsPending > 0) {
+            Row(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .navigationBarsPadding()
+                    .padding(start = 16.dp, bottom = 28.dp)
+                    .background(Color.Black.copy(alpha = 0.55f), RoundedCornerShape(14.dp))
+                    .padding(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(width = 44.dp, height = 58.dp)
+                        .border(2.dp, Color.White, RoundedCornerShape(6.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    val t = lastThumb
+                    if (t != null) {
+                        Image(
+                            bitmap = t.asImageBitmap(),
+                            contentDescription = "Последний снимок",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().padding(2.dp),
+                        )
+                    }
+                    if (shotsPending > 0) {
+                        CircularProgressIndicator(color = Color.White, strokeWidth = 2.dp, modifier = Modifier.size(22.dp))
+                    }
+                }
+                Column {
+                    Text("$shotsAdded", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 22.sp)
+                    Text(
+                        if (shotsPending > 0) "сохраняю…" else "снято",
+                        color = Color.White.copy(alpha = 0.85f),
+                        fontSize = 12.sp,
+                    )
+                }
+            }
+        }
+        if (shotsAdded > 0) {
+            Surface(
+                onClick = { navController.popBackStack() },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 16.dp, bottom = 34.dp),
+                color = Color.White,
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text(
+                    "Готово",
+                    color = Color.Black,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp),
+                )
+            }
+        }
+        AnimatedVisibility(
+            visible = confirmVisible,
+            enter = fadeIn() + scaleIn(initialScale = 0.85f),
+            exit = fadeOut(),
+            modifier = Modifier
+                .align(Alignment.Center),
+        ) {
+            Row(
+                modifier = Modifier
+                    .background(Color(0xE62F6B4F), RoundedCornerShape(18.dp))
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Color.White, modifier = Modifier.size(30.dp))
+                Column {
+                    Text("Снимок $shotsAdded сохранён", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 17.sp)
+                    Text("Наводите на следующий бланк", color = Color.White.copy(alpha = 0.9f), fontSize = 13.sp)
+                }
+            }
+        }
+        // Вспышка — сразу после нажатия, чтобы было видно, что кадр сделан.
+        if (flash.value > 0f) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .alpha(flash.value)
+                    .background(Color.White),
             )
         }
     }

@@ -3,6 +3,9 @@ package com.tscan.scanertestov.feature.batch
 /**
  * Описание: маршрут экрана пакетной обработки — локальное состояние очереди, эталона, импорт изображений и навигация.
  */
+import com.tscan.scanertestov.feature.tests.IssuedStudentCode
+import com.tscan.scanertestov.feature.tests.StudentCodeStore
+import com.tscan.scanertestov.feature.tests.blankDesign
 import android.Manifest
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -33,10 +36,13 @@ import com.tscan.scanertestov.feature.batch.BatchRecognitionWarmup
 import com.tscan.scanertestov.feature.batch.engine.BatchOmrConfig
 import com.tscan.scanertestov.feature.batch.engine.BatchOmrEngine
 import com.tscan.scanertestov.navigation.AppDestinations
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
 import org.opencv.android.Utils
 import org.opencv.core.Mat
@@ -44,6 +50,14 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import java.util.UUID
+
+/**
+ * Одновременно распознаём не больше двух листов: каждый держит в памяти полный кадр
+ * и две OCR-сессии, а 30 параллельных задач на слабом телефоне приводили к OOM и лагам.
+ */
+private val autoRecognitionPermits = Semaphore(permits = 2)
+
+private fun newWorkId(): String = "w-${UUID.randomUUID()}"
 
 @Composable
 fun BatchProcessingRoute(navController: NavHostController) {
@@ -64,7 +78,6 @@ fun BatchProcessingRoute(navController: NavHostController) {
     LaunchedEffect(batchNavEntry, state) {
         BatchProcessingPersistence.save(batchNavEntry.savedStateHandle, state)
     }
-    var nextWorkId by remember { mutableIntStateOf(1) }
     val scope = rememberCoroutineScope()
     LaunchedEffect(appContext) {
         state = state.copy(ocrWarmupInProgress = true, ocrWarmupReady = false)
@@ -111,6 +124,64 @@ fun BatchProcessingRoute(navController: NavHostController) {
         return state.correctAnswersByVariant[variant] ?: fallbackBase
     }
 
+    /** Подставить сохранённый тест (эталон): число вопросов, вариантов, колонки и ключи. */
+    fun applyPreset(preset: com.tscan.scanertestov.feature.batch.criteria.BatchCriteriaPreset, status: String) {
+        val q = clampQuestions(preset.questionsCount)
+        val c = clampChoices(preset.choicesCount)
+        val layout = if (preset.columnCount == 2) BatchPageLayout.TwoColumns else BatchPageLayout.OneColumn
+        state = state.copy(
+            questionsCount = q,
+            choicesCount = c,
+            correctAnswers = normalizeAnswers(q, c, preset.correctAnswers.map { it.toSet() }),
+            correctAnswersByVariant = preset.variantAnswerKeys.associate { item ->
+                item.variant to normalizeAnswers(q, c, item.correctAnswers.map { it.toSet() })
+            },
+            answerKeyVariantsCount = preset.variantAnswerKeys.size.coerceIn(0, 4),
+            selectedAnswerKeyVariant = preset.variantAnswerKeys.firstOrNull()?.variant,
+            pageLayout = layout,
+            criteriaNameDraft = "",
+            statusMessage = status,
+            savedCriteria = repository.getAll(),
+            gradingCriteriaJson = preset.gradingCriteriaJson,
+            testId = preset.id,
+            testTitle = preset.name,
+        )
+    }
+
+    /** Ученик по коду с именного бланка (см. [StudentCodeStore]) и что не сходится. */
+    class CodeStudent(val issued: IssuedStudentCode?, val note: String?, val warning: String?, val unknownCode: Int?)
+
+    fun codeStudent(testId: String?, code: Int?, variantOnSheet: Int?): CodeStudent {
+        if (code == null) return CodeStudent(null, null, null, null)
+        val issued = StudentCodeStore.lookup(appContext, testId, code)
+            ?: return CodeStudent(
+                null, null,
+                "Код №$code не выдавался по этому тесту — возможно, бланк от другого теста. Выберите ученика.",
+                code,
+            )
+        val warning = if (issued.variant != null && variantOnSheet != null && issued.variant != variantOnSheet) {
+            "Выдан вариант ${issued.variant}, а на бланке закрашен вариант $variantOnSheet. Проверено по варианту $variantOnSheet — как на бланке."
+        } else null
+        return CodeStudent(issued, "${issued.className} · по коду №$code", warning, null)
+    }
+
+    /**
+     * Убранные с бланка кружки теста, по которому идёт проверка (одно место правды — оформление теста).
+     * [variant] — вариант работы: у вариантов могут быть свои убранные кружки; null — общие для всех.
+     */
+    fun hiddenBubblesOfTest(testId: String? = state.testId, variant: Int? = null): Set<String> =
+        testId?.let { repository.getById(it) }?.blankDesign()?.hiddenFor(variant).orEmpty()
+
+    // Открыли из «Моих тестов» → ключ теста подставляется сам.
+    LaunchedEffect(Unit) {
+        com.tscan.scanertestov.feature.tests.PendingTestLaunch.takeBatchPresetId()
+            ?.let { repository.getById(it) }
+            ?.let {
+                val how = if (it.gradingCriteriaJson != null) "правильные ответы и критерии оценки теста подставлены" else "правильные ответы подставлены"
+                applyPreset(it, "Тест «${it.name}»: $how. Добавьте фото работ.")
+            }
+    }
+
     fun refreshPresets(newStatus: String? = null) {
         state = state.copy(savedCriteria = repository.getAll(), statusMessage = newStatus)
     }
@@ -132,11 +203,13 @@ fun BatchProcessingRoute(navController: NavHostController) {
         val optionCount = state.choicesCount
         val columnCount = if (state.pageLayout == BatchPageLayout.TwoColumns) 2 else 1
         scope.launch {
-            val (variantResult, nameResult) = coroutineScope {
+            var savedNameCropPath: String? = null
+            val (variantResult, nameResult) = autoRecognitionPermits.withPermit { coroutineScope {
                 val rosterDeferred = async(Dispatchers.IO) {
                     JournalRepository(appContext).loadAll()
                 }
-                val bmp = decodeBitmapFromContentUri(appContext, uri)
+                // Декодирование JPEG — тяжёлая операция; раньше шла в главном потоке и «вешала» UI.
+                val bmp = withContext(Dispatchers.IO) { decodeBitmapFromContentUri(appContext, uri) }
                 if (bmp == null) {
                     return@coroutineScope BatchVariantRecognitionResult(
                         variant = null,
@@ -148,9 +221,43 @@ fun BatchProcessingRoute(navController: NavHostController) {
                     )
                 }
                 try {
-                    val (variantCrop, nameCrop) = withContext(Dispatchers.Default) {
-                        extractVariantAndNameCropsSingleSnapshot(bmp)
+                    // Бланк v2 (угловые метки): вариант — по кружку, ученик — по коду; иначе прежний путь.
+                    val v2 = withContext(Dispatchers.Default) {
+                        readBlankV2(appContext, bmp, questionCount, optionCount, columnCount, hiddenBubblesOfTest())
                     }
+                    if (v2 != null) {
+                        savedNameCropPath = saveNameCropImage(appContext, workId, v2.nameCrop)
+                        try {
+                            val roster = rosterDeferred.await()
+                            val vr = BatchVariantRecognitionResult(
+                                variant = v2.variant?.takeIf { it <= maxVariantHint },
+                                confidence = if (v2.variant != null) 1f else 0f,
+                                rawText = v2.variantNote,
+                            )
+                            val byCode = codeStudent(state.testId, v2.code, v2.variant).issued
+                            val nr = if (byCode != null) {
+                                BatchStudentNameRecognitionResult(
+                                    surname = byCode.surname,
+                                    name = byCode.name,
+                                    journalClassName = byCode.className,
+                                    confidence = 1f,
+                                    rawText = "код ${v2.code}",
+                                )
+                            } else {
+                                withContext(Dispatchers.Default) {
+                                    recognizeStudentNameFromNameCropMat(appContext, v2.nameCrop, roster)
+                                }
+                            }
+                            return@coroutineScope vr to nr
+                        } finally {
+                            v2.nameCrop.release()
+                        }
+                    }
+                    val (variantCrop, nameCrop) = withContext(Dispatchers.Default) {
+                        extractVariantAndNameCropsSingleSnapshot(bmp, questionCount, optionCount, columnCount, appContext)
+                    }
+                    // Сохраняем место для имени картинкой: учитель увидит подпись и выберет ученика сам.
+                    savedNameCropPath = saveNameCropImage(appContext, workId, nameCrop)
                     try {
                         val roster = rosterDeferred.await()
                         val variantDeferred = async(Dispatchers.Default) {
@@ -175,7 +282,8 @@ fun BatchProcessingRoute(navController: NavHostController) {
                 } finally {
                     bmp.recycle()
                 }
-            }
+            } }
+            if (state.workItems.none { it.id == workId }) return@launch
             updateWorkItem(workId) { item ->
                 val merged = item.copy(
                     status = if (variantResult.error == null && nameResult.error == null) {
@@ -194,6 +302,9 @@ fun BatchProcessingRoute(navController: NavHostController) {
                     detectedStudentNameRawText = nameResult.rawText.ifBlank { null },
                     studentNameDetectionError = nameResult.error,
                     detectedJournalClassName = nameResult.journalClassName?.takeIf { it.isNotBlank() },
+                    studentCode = nameResult.rawText.removePrefix("код ").trim().toIntOrNull()
+                        ?.takeIf { nameResult.rawText.startsWith("код ") },
+                    nameCropPath = savedNameCropPath ?: item.nameCropPath,
                 )
                 merged.copy(
                     subtitle = buildWorkSubtitle(
@@ -217,6 +328,15 @@ fun BatchProcessingRoute(navController: NavHostController) {
         }
     }
 
+    // Если экран уходил в камеру/результаты во время распознавания, корутины были отменены,
+    // а у работ остался флаг «распознаётся». Перезапускаем их, иначе они зависали навсегда
+    // и проверялись по ключу варианта 1.
+    LaunchedEffect(Unit) {
+        state.workItems
+            .filter { it.isVariantDetecting }
+            .forEach { enqueueAutoRecognition(it.id, Uri.parse(it.contentUri)) }
+    }
+
     val lifecycleOwner = LocalLifecycleOwner.current
     val latestBatchState by rememberUpdatedState(state)
 
@@ -233,7 +353,7 @@ fun BatchProcessingRoute(navController: NavHostController) {
                 skipped++
                 continue
             }
-            val id = "w-${nextWorkId++}"
+            val id = newWorkId()
             val displayName = resolveBatchImageDisplayName(context, uri)
             val item = BatchWorkItem(
                 id = id,
@@ -325,7 +445,7 @@ fun BatchProcessingRoute(navController: NavHostController) {
                 skipped++
                 continue
             }
-            val id = "w-${nextWorkId++}"
+            val id = newWorkId()
             val displayName = resolveBatchImageDisplayName(context, uri)
             val item = BatchWorkItem(
                 id = id,
@@ -378,11 +498,41 @@ fun BatchProcessingRoute(navController: NavHostController) {
         }
     }
 
+    // Выход с экрана очищает список работ — если он не пуст, сначала спрашиваем.
+    var confirmExit by remember { mutableStateOf(false) }
+    fun requestExit() {
+        if (state.workItems.isNotEmpty()) confirmExit = true else navController.popBackStack()
+    }
+    androidx.activity.compose.BackHandler(enabled = state.workItems.isNotEmpty()) { confirmExit = true }
+    if (confirmExit) {
+        val n = state.workItems.size
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { confirmExit = false },
+            title = { androidx.compose.material3.Text("Выйти из проверки?") },
+            text = {
+                androidx.compose.material3.Text(
+                    "В списке работ: $n. Если выйти, список на этом экране очистится и снимки придётся добавлять заново. " +
+                        "Работы, которые вы уже отправили «В отчёт», останутся в отчёте.",
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmExit = false; navController.popBackStack() }) {
+                    androidx.compose.material3.Text("Выйти")
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { confirmExit = false }) {
+                    androidx.compose.material3.Text("Остаться")
+                }
+            },
+        )
+    }
+
     BatchProcessingScreen(
         state = state,
         onAction = { action ->
             when (action) {
-                BatchProcessingAction.Back -> navController.popBackStack()
+                BatchProcessingAction.Back -> requestExit()
                 BatchProcessingAction.CaptureByCamera -> launchCameraCapture()
                 BatchProcessingAction.LoadFromGallery -> galleryLauncher.launch("image/*")
                 is BatchProcessingAction.SetAutoRecognitionEnabled -> {
@@ -430,6 +580,8 @@ fun BatchProcessingRoute(navController: NavHostController) {
                     }
                 }
                 BatchProcessingAction.ClearQueue -> {
+                    val toDelete = state.workItems.filter { it.source == BatchWorkSource.Camera }.map { it.contentUri }
+                    scope.launch(Dispatchers.IO) { toDelete.forEach { deleteOwnBatchCaptureFile(appContext, it) } }
                     state = state.copy(
                         workItems = emptyList(),
                         selectedWorkIds = emptySet(),
@@ -454,6 +606,9 @@ fun BatchProcessingRoute(navController: NavHostController) {
                     state = state.copy(selectedWorkIds = next)
                 }
                 is BatchProcessingAction.RemoveWork -> {
+                    state.workItems.firstOrNull { it.id == action.workId }
+                        ?.takeIf { it.source == BatchWorkSource.Camera }
+                        ?.let { removed -> scope.launch(Dispatchers.IO) { deleteOwnBatchCaptureFile(appContext, removed.contentUri) } }
                     val nextItems = renumberWorkTitles(state.workItems.filterNot { it.id == action.workId })
                     val nextPreview = when {
                         state.previewWorkId == action.workId -> nextItems.firstOrNull()?.id
@@ -537,10 +692,14 @@ fun BatchProcessingRoute(navController: NavHostController) {
                     val normalizedBase = normalizeAnswers(q, state.choicesCount, state.correctAnswers)
                     val normalizedVariants = state.correctAnswersByVariant
                         .mapValues { (_, answers) -> normalizeAnswers(q, state.choicesCount, answers) }
+                    // Устройство теста изменили вручную — критерии загруженного теста больше не применяем.
+                    val hadTestCriteria = state.gradingCriteriaJson != null && q != state.questionsCount
                     state = state.copy(
                         questionsCount = q,
                         correctAnswers = normalizedBase,
                         correctAnswersByVariant = normalizedVariants,
+                        gradingCriteriaJson = if (hadTestCriteria) null else state.gradingCriteriaJson,
+                        statusMessage = if (hadTestCriteria) "Число вопросов изменено — оценки будут по общим критериям из Настроек" else state.statusMessage,
                     )
                 }
                 is BatchProcessingAction.SetChoicesCount -> {
@@ -548,10 +707,13 @@ fun BatchProcessingRoute(navController: NavHostController) {
                     val normalizedBase = normalizeAnswers(state.questionsCount, c, state.correctAnswers)
                     val normalizedVariants = state.correctAnswersByVariant
                         .mapValues { (_, answers) -> normalizeAnswers(state.questionsCount, c, answers) }
+                    val hadTestCriteria = state.gradingCriteriaJson != null && c != state.choicesCount
                     state = state.copy(
                         choicesCount = c,
                         correctAnswers = normalizedBase,
                         correctAnswersByVariant = normalizedVariants,
+                        gradingCriteriaJson = if (hadTestCriteria) null else state.gradingCriteriaJson,
+                        statusMessage = if (hadTestCriteria) "Число вариантов ответа изменено — оценки будут по общим критериям из Настроек" else state.statusMessage,
                     )
                 }
                 is BatchProcessingAction.ToggleCorrectAnswerSelection -> {
@@ -589,18 +751,7 @@ fun BatchProcessingRoute(navController: NavHostController) {
                 }
                 BatchProcessingAction.SaveCriteriaPreset -> {
                     val baseForFallback = state.correctAnswersByVariant[1] ?: state.correctAnswers
-                    val hasInvalidBase = baseForFallback.any { it.isEmpty() || it.size >= state.choicesCount }
-                    val hasInvalidVariants = if (state.answerKeyVariantsCount <= 0) {
-                        false
-                    } else {
-                        (1..state.answerKeyVariantsCount).any { variant ->
-                            state.correctAnswersByVariant[variant]
-                                .orEmpty()
-                                .any { it.isEmpty() || it.size >= state.choicesCount }
-                        }
-                    }
-                    val hasInvalid = hasInvalidBase || hasInvalidVariants
-                    if (hasInvalid) {
+                    if (hasInvalidAnswerKey(state)) {
                         state = state.copy(statusMessage = "В каждом вопросе выберите от 1 до ${state.choicesCount - 1} вариантов")
                         return@BatchProcessingScreen
                     }
@@ -629,6 +780,7 @@ fun BatchProcessingRoute(navController: NavHostController) {
                                     .map { it.sorted() },
                             )
                         },
+                        gradingCriteriaJson = state.gradingCriteriaJson,
                     )
                     repository.add(preset)
                     refreshPresets("Эталон сохранён: $name")
@@ -642,27 +794,7 @@ fun BatchProcessingRoute(navController: NavHostController) {
                     if (preset == null) {
                         refreshPresets("Эталон не найден")
                     } else {
-                        val q = clampQuestions(preset.questionsCount)
-                        val c = clampChoices(preset.choicesCount)
-                        val layout = if (preset.columnCount == 2) {
-                            BatchPageLayout.TwoColumns
-                        } else {
-                            BatchPageLayout.OneColumn
-                        }
-                        state = state.copy(
-                            questionsCount = q,
-                            choicesCount = c,
-                            correctAnswers = normalizeAnswers(q, c, preset.correctAnswers.map { it.toSet() }),
-                            correctAnswersByVariant = preset.variantAnswerKeys.associate { item ->
-                                item.variant to normalizeAnswers(q, c, item.correctAnswers.map { it.toSet() })
-                            },
-                            answerKeyVariantsCount = preset.variantAnswerKeys.size.coerceIn(0, 4),
-                            selectedAnswerKeyVariant = preset.variantAnswerKeys.firstOrNull()?.variant,
-                            pageLayout = layout,
-                            criteriaNameDraft = "",
-                            statusMessage = "Эталон загружен: ${preset.name}",
-                            savedCriteria = repository.getAll()
-                        )
+                        applyPreset(preset, "Эталон загружен: ${preset.name}")
                     }
                 }
                 is BatchProcessingAction.DeleteCriteriaPreset -> {
@@ -680,125 +812,103 @@ fun BatchProcessingRoute(navController: NavHostController) {
                         state = state.copy(statusMessage = "Сначала добавьте работы в очередь")
                         return@BatchProcessingScreen
                     }
-                    val baseForFallback = state.correctAnswersByVariant[1] ?: state.correctAnswers
-                    val hasInvalidBase = baseForFallback.any { it.isEmpty() || it.size >= state.choicesCount }
-                    val hasInvalidVariants = if (state.answerKeyVariantsCount <= 0) {
-                        false
-                    } else {
-                        (1..state.answerKeyVariantsCount).any { variant ->
-                            state.correctAnswersByVariant[variant]
-                                .orEmpty()
-                                .any { it.isEmpty() || it.size >= state.choicesCount }
-                        }
-                    }
-                    if (hasInvalidBase || hasInvalidVariants) {
+                    if (hasInvalidAnswerKey(state)) {
                         state = state.copy(statusMessage = "Сначала задайте эталонные ответы")
                         return@BatchProcessingScreen
                     }
                     if (state.isProcessing) return@BatchProcessingScreen
-                    val items = state.workItems.toList()
-                    val layout = state.pageLayout
-                    state = state.copy(isProcessing = true, statusMessage = "Проверяем работы…")
+                    val stillDetecting = state.workItems.count { it.isVariantDetecting }
+                    if (stillDetecting > 0) {
+                        // Иначе работа без определённого варианта молча проверится по ключу варианта 1.
+                        state = state.copy(
+                            statusMessage = "Дождитесь окончания распознавания варианта и ФИО (осталось: $stillDetecting)",
+                        )
+                        return@BatchProcessingScreen
+                    }
+                    // Снимок состояния: фоновый цикл не должен читать изменяемое состояние экрана.
+                    val snapshot = state
+                    val items = snapshot.workItems.toList()
+                    val layout = snapshot.pageLayout
+                    val columnCount = if (layout == BatchPageLayout.OneColumn) 1 else 2
+                    state = state.copy(isProcessing = true, statusMessage = "Проверяем работы… 0 из ${items.size}")
                     scope.launch {
                         try {
-                            val lines = withContext(Dispatchers.Default) {
-                                val out = mutableListOf<String>()
-                                val runItems = mutableListOf<BatchRunItemResult>()
-                                for (item in items) {
-                                    val itemAnswerKey = resolveAnswerKeyForWork(item, state)
-                                    val itemVariant = item.effectiveVariant()
-                                    val variantSuffix = itemVariant?.let { " · вариант: $it" }.orEmpty()
-                                    val uri = Uri.parse(item.contentUri)
-                                    val bmp = decodeBitmapFromContentUri(appContext, uri)
-                                    if (bmp == null) {
-                                        val msg = "${item.title}: не удалось открыть изображение"
-                                        out += msg
-                                        runItems += BatchRunItemResult(
-                                            title = item.title,
-                                            layoutLabel = layout.label,
-                                            config = BatchOmrConfig(
-                                                questionsCount = state.questionsCount,
-                                                choicesCount = state.choicesCount,
-                                                columnCount = if (layout == BatchPageLayout.OneColumn) 1 else 2,
-                                                answerKey = itemAnswerKey,
-                                                strictScoring = state.strictScoring,
-                                            ),
-                                            detectedVariant = item.effectiveVariant(),
-                                            detectedStudentSurname = item.detectedStudentSurname,
-                                            detectedStudentName = item.detectedStudentName,
-                                            detectedJournalClassName = item.detectedJournalClassName,
-                                            error = "не удалось открыть изображение",
-                                        )
-                                        continue
-                                    }
-                                    try {
-                                        val cfg = BatchOmrConfig(
-                                            questionsCount = state.questionsCount,
-                                            choicesCount = state.choicesCount,
-                                            columnCount = if (layout == BatchPageLayout.OneColumn) 1 else 2,
-                                            answerKey = itemAnswerKey,
-                                            strictScoring = state.strictScoring,
-                                        )
-                                        val omr = BatchOmrEngine.process(
-                                            context = appContext,
-                                            bitmap = bmp,
-                                            config = cfg,
-                                        )
-                                        runItems += BatchRunItemResult(
+                            val runId = BatchLastRunStore.newRunId()
+                            val createdAt = System.currentTimeMillis()
+                            val runItems = withContext(Dispatchers.Default) {
+                                val out = ArrayList<BatchRunItemResult>(items.size)
+                                for ((index, item) in items.withIndex()) {
+                                    val bmp = decodeBitmapFromContentUri(appContext, Uri.parse(item.contentUri))
+                                    // Бланк v2: вариант и код ученика читаются здесь, даже если авто-распознавание выключено —
+                                    // иначе работа без варианта проверилась бы по ключу варианта 1.
+                                    val header = if (bmp != null && (item.effectiveVariant() == null || item.studentCode == null)) {
+                                        runCatching {
+                                            readBlankV2(
+                                                appContext, bmp, snapshot.questionsCount, snapshot.choicesCount, columnCount,
+                                                hiddenBubblesOfTest(snapshot.testId),
+                                            )?.also { it.nameCrop.release() }
+                                        }.getOrNull()
+                                    } else null
+                                    val variant = item.effectiveVariant() ?: header?.variant
+                                    val code = item.studentCode ?: header?.code
+                                    val who = codeStudent(snapshot.testId, code, variant)
+                                    val keyBase = snapshot.correctAnswersByVariant[1] ?: snapshot.correctAnswers
+                                    val cfg = BatchOmrConfig(
+                                        questionsCount = snapshot.questionsCount,
+                                        choicesCount = snapshot.choicesCount,
+                                        columnCount = columnCount,
+                                        answerKey = if (snapshot.answerKeyVariantsCount <= 0 || variant == null) keyBase
+                                        else snapshot.correctAnswersByVariant[variant] ?: keyBase,
+                                        strictScoring = snapshot.strictScoring,
+                                        hiddenBubbleIds = hiddenBubblesOfTest(snapshot.testId, variant),
+                                    )
+                                    fun result(omr: com.tscan.scanertestov.feature.batch.engine.BatchOmrResult? = null, error: String? = null) =
+                                        BatchRunItemResult(
                                             title = item.title,
                                             layoutLabel = layout.label,
                                             config = cfg,
-                                            detectedVariant = item.effectiveVariant(),
-                                            detectedStudentSurname = item.detectedStudentSurname,
-                                            detectedStudentName = item.detectedStudentName,
-                                            detectedJournalClassName = item.detectedJournalClassName,
+                                            detectedVariant = variant,
+                                            detectedStudentSurname = who.issued?.surname ?: item.detectedStudentSurname.takeIf { who.unknownCode == null },
+                                            detectedStudentName = who.issued?.name ?: item.detectedStudentName.takeIf { who.unknownCode == null },
+                                            detectedJournalClassName = who.issued?.className ?: item.detectedJournalClassName,
+                                            nameCropPath = item.nameCropPath,
+                                            studentNote = who.note,
+                                            warning = who.warning,
                                             omr = omr,
+                                            error = error,
                                         )
-                                        val fixedSuffix = if (omr.fixedCells.isNotEmpty()) {
-                                            " · fixed: ${omr.fixedCells.size}"
-                                        } else {
-                                            ""
+                                    val itemResult = if (bmp == null) {
+                                        result(error = "не удалось открыть изображение")
+                                    } else {
+                                        try {
+                                            result(omr = BatchOmrEngine.process(context = appContext, bitmap = bmp, config = cfg))
+                                        } catch (e: CancellationException) {
+                                            throw e
+                                        } catch (e: Exception) {
+                                            result(error = e.message ?: e.toString())
+                                        } catch (e: OutOfMemoryError) {
+                                            result(error = "недостаточно памяти для обработки фото")
+                                        } finally {
+                                            bmp.recycle()
                                         }
-                                        if (!omr.contourFound) {
-                                            out += "${item.title}: контур бланка не найден"
-                                        } else {
-                                            val itemEtalonText = itemAnswerKey.joinToString(separator = " | ") { answerSet ->
-                                                answerSet.sorted().joinToString("+") { (it + 1).toString() }
-                                            }
-                                            out += "${item.title}: ${omr.correctCount}/${state.questionsCount} · ${"%.1f".format(Locale.US, omr.scorePercent)}%$fixedSuffix · ${layout.label}$variantSuffix · ключ [$itemEtalonText]"
-                                        }
-                                    } catch (e: Exception) {
-                                        out += "${item.title}: ошибка — ${e.message ?: e.toString()}"
-                                        runItems += BatchRunItemResult(
-                                            title = item.title,
-                                            layoutLabel = layout.label,
-                                            config = BatchOmrConfig(
-                                                questionsCount = state.questionsCount,
-                                                choicesCount = state.choicesCount,
-                                                columnCount = if (layout == BatchPageLayout.OneColumn) 1 else 2,
-                                                answerKey = itemAnswerKey,
-                                                strictScoring = state.strictScoring,
-                                            ),
-                                            detectedVariant = item.effectiveVariant(),
-                                            detectedStudentSurname = item.detectedStudentSurname,
-                                            detectedStudentName = item.detectedStudentName,
-                                            detectedJournalClassName = item.detectedJournalClassName,
-                                            error = e.message ?: e.toString(),
-                                        )
-                                    } finally {
-                                        bmp.recycle()
+                                    }
+                                    // Полный кадр бланка — на диск, в памяти остаётся только миниатюра.
+                                    out += BatchLastRunStore.detachSheetImage(appContext, runId, index, itemResult)
+                                    withContext(Dispatchers.Main) {
+                                        state = state.copy(statusMessage = "Проверяем работы… ${index + 1} из ${items.size}")
                                     }
                                 }
-                                BatchLastRunStore.resultItems = runItems
-                                out.toList()
+                                BatchLastRunStore.publish(appContext, runId, createdAt, out, snapshot.gradingCriteriaJson, snapshot.testId, snapshot.testTitle)
+                                out
                             }
-                            BatchLastRunStore.resultLines = lines
                             state = state.copy(
                                 isProcessing = false,
-                                lastRunSummary = "Распознано работ: ${items.size} · эталонных вопросов: ${state.questionsCount}",
+                                lastRunSummary = "Распознано работ: ${runItems.size} · эталонных вопросов: ${snapshot.questionsCount}",
                                 statusMessage = null
                             )
                             navController.navigate(AppDestinations.BATCH_RESULTS)
+                        } catch (e: CancellationException) {
+                            throw e
                         } catch (e: Exception) {
                             state = state.copy(
                                 isProcessing = false,
@@ -811,3 +921,38 @@ fun BatchProcessingRoute(navController: NavHostController) {
         }
     )
 }
+
+/** Ключ некорректен, если в каком-то вопросе не выбран ни один вариант или выбраны все. */
+private fun hasInvalidAnswerKey(state: BatchProcessingState): Boolean {
+    fun bad(answers: List<Set<Int>>) = answers.any { it.isEmpty() || it.size >= state.choicesCount }
+    val base = state.correctAnswersByVariant[1] ?: state.correctAnswers
+    if (bad(base)) return true
+    if (state.answerKeyVariantsCount <= 0) return false
+    return (1..state.answerKeyVariantsCount).any { v -> bad(state.correctAnswersByVariant[v].orEmpty()) }
+}
+
+/** Сохраняет место для имени с бланка картинкой (для «Чья работа?» на экране результатов). */
+private fun saveNameCropImage(context: android.content.Context, workId: String, crop: Mat): String? = runCatching {
+    if (crop.empty()) return@runCatching null
+    val dir = java.io.File(context.filesDir, "batch_names").apply { mkdirs() }
+    val safe = workId.replace(Regex("[^A-Za-z0-9_-]"), "_").take(60)
+    val file = java.io.File(dir, "$safe.jpg")
+    val rgba = Mat()
+    try {
+        when (crop.channels()) {
+            3 -> org.opencv.imgproc.Imgproc.cvtColor(crop, rgba, org.opencv.imgproc.Imgproc.COLOR_BGR2RGBA)
+            1 -> org.opencv.imgproc.Imgproc.cvtColor(crop, rgba, org.opencv.imgproc.Imgproc.COLOR_GRAY2RGBA)
+            else -> crop.copyTo(rgba)
+        }
+        val bmp = android.graphics.Bitmap.createBitmap(rgba.cols(), rgba.rows(), android.graphics.Bitmap.Config.ARGB_8888)
+        try {
+            Utils.matToBitmap(rgba, bmp)
+            java.io.FileOutputStream(file).use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 85, it) }
+        } finally {
+            bmp.recycle()
+        }
+        file.absolutePath
+    } finally {
+        rgba.release()
+    }
+}.getOrNull()

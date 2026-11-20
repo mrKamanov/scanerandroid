@@ -4,6 +4,7 @@ package com.tscan.scanertestov.feature.instructions.components
  * Описание: приветственная карточка и строки оглавления на экране инструкций.
  */
 import androidx.compose.foundation.background
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -35,13 +36,13 @@ internal fun InstructionsWelcomeCard(modifier: Modifier = Modifier) {
                 text = "Руководство пользователя",
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFE8F4FC),
+                color = Scrapbook.Ink,
             )
             Text(
                 text = "Выберите тему ниже. Материал разбит на шаги: от первого запуска до пакетной проверки и отчётов. " +
                     "Рекомендуем начать с «С чего начать», затем прочитать «Данные на вашем устройстве».",
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFFB8D4E8),
+                color = Scrapbook.InkMuted,
             )
         }
     }
@@ -66,7 +67,7 @@ internal fun InstructionsTopicRow(
                 modifier = Modifier
                     .size(32.dp)
                     .clip(CircleShape)
-                    .background(Color(0xFF5EC4FF)),
+                    .background(Scrapbook.Sky),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
@@ -74,7 +75,7 @@ internal fun InstructionsTopicRow(
                     text = index.toString(),
                     style = MaterialTheme.typography.labelLarge,
                     fontWeight = FontWeight.Bold,
-                    color = Color(0xFF061018),
+                    color = Scrapbook.Ink,
                 )
             }
             Column(
@@ -85,18 +86,18 @@ internal fun InstructionsTopicRow(
                     text = topic.title,
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFE8F4FC),
+                    color = Scrapbook.Ink,
                 )
                 Text(
                     text = topic.subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFFB8D4E8),
+                    color = Scrapbook.InkMuted,
                 )
             }
             Icon(
                 imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
                 contentDescription = null,
-                tint = Color(0xFF8FAFC4),
+                tint = Scrapbook.InkMuted,
             )
         }
     }

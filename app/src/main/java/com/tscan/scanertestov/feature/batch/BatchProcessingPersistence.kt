@@ -40,6 +40,7 @@ object BatchProcessingPersistence {
         o.put("critExpanded", state.savedCriteriaExpanded)
         o.put("layout", state.pageLayout.name)
         o.put("strict", state.strictScoring)
+        state.gradingCriteriaJson?.let { o.put("grading", it) }
         o.put("auto", state.autoRecognitionEnabled)
         state.previewWorkId?.let { o.put("preview", it) }
         val selected = JSONArray()
@@ -81,6 +82,7 @@ object BatchProcessingPersistence {
                 BatchPageLayout.OneColumn
             },
             strictScoring = o.optBoolean("strict", true),
+            gradingCriteriaJson = if (o.has("grading") && !o.isNull("grading")) o.optString("grading") else null,
             autoRecognitionEnabled = o.optBoolean("auto", false),
             isProcessing = false,
         )
@@ -108,6 +110,8 @@ object BatchProcessingPersistence {
             item.detectedStudentNameRawText?.let { put("snrt", it) }
             item.studentNameDetectionError?.let { put("sne", it) }
             item.detectedJournalClassName?.let { put("jcn", it) }
+            item.studentCode?.let { put("code", it) }
+            item.nameCropPath?.let { put("ncp", it) }
         }
     }
 
@@ -133,6 +137,8 @@ object BatchProcessingPersistence {
             detectedStudentNameRawText = if (j.has("snrt")) j.optString("snrt") else null,
             studentNameDetectionError = if (j.has("sne")) j.optString("sne") else null,
             detectedJournalClassName = if (j.has("jcn")) j.optString("jcn") else null,
+            studentCode = if (j.has("code")) j.optInt("code") else null,
+            nameCropPath = if (j.has("ncp")) j.optString("ncp") else null,
         )
     }
 

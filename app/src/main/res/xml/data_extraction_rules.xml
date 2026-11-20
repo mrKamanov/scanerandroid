@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Описание: правила облачной копии и переноса на новое устройство (Android 12+).
+     Журнал, шаблоны и настройки переносятся; фото бланков с ФИО учеников — нет. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="batch_capture/" />
+        <exclude domain="file" path="batch_runs/" />
+        <exclude domain="file" path="batch_names/" />
+        <exclude domain="file" path="reports/sheets/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="batch_capture/" />
+        <exclude domain="file" path="batch_runs/" />
+        <exclude domain="file" path="batch_names/" />
+        <exclude domain="file" path="reports/sheets/" />
+    </device-transfer>
+</data-extraction-rules>

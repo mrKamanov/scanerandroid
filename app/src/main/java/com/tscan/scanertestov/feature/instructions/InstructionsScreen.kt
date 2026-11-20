@@ -47,6 +47,7 @@ fun InstructionsScreen(
             }
         },
         showBubbleSheetDecor = true,
+        title = "Инструкция",
     ) { padding ->
         ScreenContentColumn(
             padding = padding,

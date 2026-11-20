@@ -1,40 +1,41 @@
 package com.tscan.scanertestov.feature.realtime.ui
 
 /**
- * Описание: объёмная круглая кнопка-иконка для панели быстрой проверки.
+ * Описание: круглая кнопка-иконка в стиле «Скрапбук» — наклейка с белой каймой,
+ * чернильной обводкой и «жёсткой» тенью. Используется на многих экранах.
  */
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.LocalContentColor
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ripple
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.tscan.scanertestov.ui.theme.Scrapbook
 
+@Suppress("UNUSED_PARAMETER")
 @Composable
 internal fun RealtimeBubbleIconButton(
     onClick: () -> Unit,
@@ -50,23 +51,33 @@ internal fun RealtimeBubbleIconButton(
     content: @Composable () -> Unit,
 ) {
     val src = interactionSource ?: remember { MutableInteractionSource() }
-    val shadowElev = if (enabled) 14.dp else 5.dp
-    val spot = Color(0xFF0B1A33).copy(alpha = if (enabled) 0.38f else 0.22f)
-    val ambient = Color(0xFF1E3A5C).copy(alpha = if (enabled) 0.28f else 0.16f)
+    val pressed by src.collectIsPressedAsState()
+    val scale by animateFloatAsState(if (pressed) 0.94f else 1f, label = "stickerPress")
+    // На светлой «бумажке» белая иконка не читается — рисуем её чернилами.
+    val iconColor = when {
+        !enabled -> Scrapbook.Ink.copy(alpha = 0.45f)
+        contentColor == Color.White && topColor.luminance() > 0.5f -> Scrapbook.Ink
+        else -> contentColor
+    }
+    val shadowOffset = if (pressed) 1.dp else 3.dp
     Box(
         modifier = modifier
             .size(size)
-            .shadow(shadowElev, CircleShape, clip = false, ambientColor = ambient, spotColor = spot)
+            .graphicsLayer {
+                scaleX = scale
+                scaleY = scale
+                alpha = if (enabled) 1f else 0.7f
+            }
+            .drawBehind {
+                val o = shadowOffset.toPx()
+                drawCircle(Color(0x33000000), radius = this.size.minDimension / 2, center = center + Offset(o, o))
+            }
             .clip(CircleShape)
-            .background(
-                Brush.verticalGradient(listOf(topColor, bottomColor)),
-                CircleShape,
-            )
-            .border(1.5.dp, borderColor, CircleShape)
-            .graphicsLayer { alpha = if (enabled) 1f else 0.72f }
+            .background(Color.White, CircleShape)
+            .border(2.dp, Scrapbook.Ink.copy(alpha = if (enabled) 1f else 0.4f), CircleShape)
             .clickable(
                 interactionSource = src,
-                indication = ripple(color = Color.White.copy(alpha = 0.22f)),
+                indication = ripple(color = Scrapbook.Ink.copy(alpha = 0.2f)),
                 enabled = enabled,
                 role = Role.Button,
                 onClick = onClick,
@@ -77,64 +88,14 @@ internal fun RealtimeBubbleIconButton(
             },
         contentAlignment = Alignment.Center,
     ) {
+        // Белая кайма вокруг цветного кружка — как у вырезанной наклейки.
         Box(
             modifier = Modifier
-                .fillMaxSize()
-                .padding(3.dp)
-                .border(
-                    width = 1.dp,
-                    color = Color.White.copy(alpha = 0.28f),
-                    shape = CircleShape,
-                ),
+                .size(size - 10.dp)
+                .clip(CircleShape)
+                .background(topColor, CircleShape),
         )
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth(0.78f)
-                .fillMaxHeight(0.34f)
-                .background(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.55f to Color.White.copy(alpha = 0.08f),
-                        1f to Color.White.copy(alpha = 0.18f),
-                    ),
-                    shape = CircleShape,
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .size(size * 0.58f)
-                .padding(start = 6.dp, top = 5.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.58f),
-                            Color.White.copy(alpha = 0.12f),
-                            Color.Transparent,
-                        ),
-                        center = Offset.Zero,
-                        radius = size.value * 0.95f,
-                    ),
-                    shape = CircleShape,
-                ),
-        )
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 12.dp, top = 9.dp)
-                .size(size * 0.22f)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(Color.White.copy(alpha = 0.72f), Color.Transparent),
-                        center = Offset.Zero,
-                    ),
-                    shape = CircleShape,
-                ),
-        )
-        CompositionLocalProvider(
-            LocalContentColor provides if (enabled) contentColor else MaterialTheme.colorScheme.onSurfaceVariant,
-        ) {
+        CompositionLocalProvider(LocalContentColor provides iconColor) {
             content()
         }
     }

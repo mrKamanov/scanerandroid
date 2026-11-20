@@ -1,7 +1,6 @@
 package com.tscan.scanertestov.feature.settings
 
 import com.tscan.scanertestov.data.GradingCriteriaConfig
-import com.tscan.scanertestov.data.InferenceModelVariant
 
 /**
  * Описание: состояние экрана настроек и подписи к разделам.
@@ -11,13 +10,17 @@ data class SettingsState(
     val quickAccessBarSwitchText: String = "Панель быстрого доступа",
     val isQuickAccessBarEnabled: Boolean = false,
     val aiModelTitle: String = "Модель распознавания (ИИ)",
-    val aiModelFastTitle: String = "Быстрая",
-    val aiModelFastSubtitle: String = "Для слабых устройств, меньше нагрузка на устройство",
-    val aiModelBalancedTitle: String = "Сбалансированная",
-    val aiModelBalancedSubtitle: String = "Рекомендуется: баланс скорости и точности",
-    val aiModelPreciseTitle: String = "Максимальная",
-    val aiModelPreciseSubtitle: String = "Для мощных устройств, выше нагрузка и точность",
-    val selectedInferenceModel: InferenceModelVariant = InferenceModelVariant.BALANCED_128,
+    val aiModelSummary: String = "Каждый кружок бланка проверяет нейросеть, дообученная на настоящих бланках этого " +
+        "приложения. Она отличает пустой кружок, закрашенный и исправленный (закрашен и перечёркнут). Работает прямо " +
+        "на телефоне, без интернета. Выбирать ничего не нужно.",
+    val aiModelFacts: List<Pair<String, String>> = listOf(
+        "Что видит" to "Вырезку одного кружка 128×128 точек",
+        "Три ответа" to "Пусто · закрашен · исправлен",
+        "Точность" to "99,87 % при нормальных условиях: ровный снимок, хороший свет, плотная закраска",
+        "Слабая штриховка" to "Дообучена на бледных и неполных закрасках — такие кружки больше не пропускает",
+        "Второе мнение" to "Если нейросеть сомневается, приложение дополнительно сверяет темноту кружка",
+        "Скорость" to "Около секунды на бланк в «Один бланк в камере», в пакетной проверке — быстрее",
+    ),
     val omrConfidenceTitle: String = "Порог уверенности ИИ (OMR)",
     val omrConfidenceHint: String =
         "Максимальная вероятность softmax по классам ячейки. Ниже порога — ответ «сомнительный». Меньше порог — реже сомнительные при спорных вероятностях; если модель уже уверенно выбрала «пусто» или «закрашено», ползунок это не перевернёт. Действует с нового прогона пакетной обработки (уже посчитанный бланк не пересчитывается сам).",
@@ -28,8 +31,8 @@ data class SettingsState(
     val importStudentsText: String = "Импорт учеников (Excel)",
     val exportJournalsText: String = "Экспорт журналов",
     val importJournalsText: String = "Импорт журналов",
-    val gradingTitle: String = "Критерии оценивания",
-    val gradingHint: String = "Задают соответствие результата проверки бланка оценке от 2 до 5 на экране итогов пакетной обработки. В режиме «Проценты» используется средний процент по вопросам; в режиме «Баллы» — сумма баллов за вопросы (с учётом частичного зачёта, если он включён в шаблоне).",
+    val gradingTitle: String = "Критерии оценивания по умолчанию",
+    val gradingHint: String = "Действуют для тестов, у которых не заданы свои критерии (их задают в «Тесты» → тест → «Критерии оценки»). Задают соответствие результата проверки бланка оценке от 2 до 5 на экране итогов пакетной обработки. В режиме «Проценты» используется средний процент по вопросам; в режиме «Баллы» — сумма баллов за вопросы (с учётом частичного зачёта, если он включён в шаблоне).",
     val gradingModePercent: String = "Проценты",
     val gradingModePoints: String = "Баллы",
     val gradingPercentIntro: String = "Границы целых процентов (0–100), сравнение по округлению вниз.",
@@ -41,5 +44,4 @@ data class SettingsState(
     val legalTitle: String = "Правовая информация",
     val legalPrivacyText: String = "Политика конфиденциальности",
     val legalPrivacyHint: String = "Откроется на GitHub в браузере",
-    val legalSourceCodeText: String = "Исходный код (GPL-3.0)",
 )

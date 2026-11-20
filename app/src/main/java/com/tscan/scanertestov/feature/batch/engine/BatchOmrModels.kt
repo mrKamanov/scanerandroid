@@ -11,6 +11,8 @@ data class BatchCellPrediction(
     val choiceIndex: Int,
     val klass: BatchCellClass,
     val confidence: Float,
+    /** Вероятности нейросети [пусто, отмечено, исправлено]; null — если считала эвристика. */
+    val probs: FloatArray? = null,
 )
 
 /**
@@ -38,6 +40,8 @@ data class BatchOmrConfig(
     val columnCount: Int,
     val answerKey: List<Set<Int>>,
     val strictScoring: Boolean,
+    /** Убранные с бланка кружки («14.5»): их нет на бумаге — не ищем кольцо и не считаем ни ответом, ни пропуском. */
+    val hiddenBubbleIds: Set<String> = emptySet(),
 )
 
 data class BatchQuestionScore(
@@ -55,6 +59,10 @@ data class BatchOmrResult(
     val contourFound: Boolean,
     val sheetCropBitmap: Bitmap? = null,
     val columnFrames: List<BatchColumnFrameGrid>? = null,
+    /** Уверенность, что найдена именно сетка бланка (доля «узнанных» кружков), 0..1. */
+    val gridScore: Float? = null,
+    /** Лист был перевёрнут на 180° и развёрнут программно. */
+    val flipped: Boolean = false,
 ) {
     val correctCount: Int get() = questionScores.count { it.correct }
     val incorrectCount: Int get() = questionScores.size - correctCount

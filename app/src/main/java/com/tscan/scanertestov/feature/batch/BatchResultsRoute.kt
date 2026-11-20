@@ -35,55 +35,100 @@ fun BatchResultsRoute(navController: NavHostController) {
         activity.lifecycle.addObserver(observer)
         onDispose { activity.lifecycle.removeObserver(observer) }
     }
-    val gradingCriteria = remember(criteriaReload, context) {
-        AppSettingsStore.getGradingCriteria(context)
+    val run = remember { BatchLastRunStore.current }
+    // Критерии теста, с которыми проверяли; если у теста своих нет — общие из Настроек.
+    val gradingCriteria = remember(criteriaReload, context, run?.runId) {
+        run?.gradingCriteriaJson?.let { GradingCriteriaConfig.fromPrefsString(it) }
+            ?: AppSettingsStore.getGradingCriteria(context)
     }
-    val runItems = BatchLastRunStore.resultItems
+    val runItems = run?.items.orEmpty()
+    val runId = run?.runId.orEmpty()
     val exportedIndices = remember { mutableStateMapOf<Int, Boolean>() }
-    val fixedDecisions = remember { mutableStateMapOf<String, Boolean>() }
+    // Очередь повторов: (номер работы, её снимок для отчёта, уже добавленная работа).
+    val dupQueue = remember { androidx.compose.runtime.mutableStateListOf<Triple<Int, ReportsWorkSnapshot, ReportsWorkSnapshot>>() }
+    var assignRequest by remember { androidx.compose.runtime.mutableStateOf<Int?>(null) }
+    fun sendOrQueue(index: Int, snapshot: ReportsWorkSnapshot) {
+        val dup = com.tscan.scanertestov.feature.reports.ReportDuplicates.findFor(snapshot, ReportsSelectedWorksStore.works)
+        if (dup == null) {
+            ReportsSelectedWorksStore.upsert(snapshot)
+            exportedIndices[index] = true
+        } else if (dupQueue.none { it.first == index }) {
+            dupQueue += Triple(index, snapshot, dup)
+        }
+    }
+    // Решения по спорным ячейкам хранятся вместе с прогоном на диске: не теряются
+    // при переходе в «Отчёты» и обратно и при выгрузке приложения.
+    val fixedDecisions = remember(runId) {
+        mutableStateMapOf<String, Boolean>().apply { putAll(run?.decisions.orEmpty()) }
+    }
+    // Очевидные исправления (зачеркнул и закрасил другой) решаются сами; решение учителя главнее.
+    val autoDecisions = remember(runId) { autoFixedDecisions(runItems) }
+    // «Чья работа?»: имена, которые учитель указал вручную, и список учеников из журнала.
+    val manualNames = remember(runId) {
+        mutableStateMapOf<Int, BatchManualName>().apply { putAll(run?.manualNames.orEmpty()) }
+    }
+    val roster = remember { com.tscan.scanertestov.feature.journals.JournalRepository(context).loadAll() }
+    val effectiveDecisions: Map<String, Boolean> = autoDecisions + fixedDecisions
     val fixedUiItems = buildFixedUiItems(
         runItems = runItems,
         decisions = fixedDecisions,
+        autoDecisions = autoDecisions,
         showOnlyUnresolved = true,
     )
     val entries = if (runItems.isNotEmpty()) {
         buildResultEntries(
             runItems = runItems,
-            decisions = fixedDecisions,
+            decisions = effectiveDecisions,
+            explicitDecisions = fixedDecisions,
+            manualNames = manualNames,
             gradingCriteria = gradingCriteria,
         )
     } else {
-        val lines = BatchLastRunStore.resultLines
-        if (lines.isNotEmpty()) {
-            lines.map { line ->
-                BatchResultEntryState(
-                    title = "Результат",
-                    status = line,
-                )
-            }
-        } else {
-            listOf(
-                BatchResultEntryState(
-                    title = "Пакетная обработка",
-                    status = "Пока нет сохранённого результата. Запустите обработку на экране «Пакетная обработка».",
-                ),
-            )
+        listOf(
+            BatchResultEntryState(
+                title = "Пакетная обработка",
+                status = "Пока нет сохранённого результата. Запустите обработку на экране «Пакетная обработка».",
+            ),
+        )
+    }
+    if (exportedIndices.isEmpty() && runItems.isNotEmpty()) {
+        val sentKeys = ReportsSelectedWorksStore.works.mapTo(HashSet()) { it.sourceKey }
+        entries.indices.forEach { index ->
+            if (reportSourceKey(runId, index) in sentKeys) exportedIndices[index] = true
         }
     }
-    if (exportedIndices.isEmpty()) {
-        entries.forEachIndexed { index, entry ->
-            val key = reportSourceKey(index, entry)
-            if (ReportsSelectedWorksStore.works.any { it.sourceKey == key }) {
-                exportedIndices[index] = true
-            }
-        }
-    }
+    com.tscan.scanertestov.ui.components.ScreenTour(
+        "batch_results",
+        com.tscan.scanertestov.ui.components.ScreenTours.BatchResults,
+        enabled = runItems.isNotEmpty(),
+    ) {
     BatchResultsScreen(
         state = BatchResultsState(
             resultEntries = entries,
             summary = if (runItems.isNotEmpty()) buildSummary(entries) else null,
             fixedItems = fixedUiItems,
             exportedToReportsIndices = exportedIndices.keys,
+            roster = roster,
+            duplicatePrompt = dupQueue.firstOrNull()?.let { (index, snap, old) ->
+                val e = entries.getOrNull(index)
+                BatchDuplicatePrompt(
+                    itemIndex = index,
+                    reportTitle = snap.testTitle ?: "проверка",
+                    studentLabel = old.fullName ?: snap.fullName ?: "без имени",
+                    existingTitle = old.title,
+                    existingSheetPath = old.sheetPath,
+                    existingGrade = old.grade,
+                    existingPercent = old.percent,
+                    newTitle = snap.title,
+                    newSheetPath = e?.sheetImagePath ?: snap.sheetPath,
+                    newGrade = snap.grade,
+                    newPercent = snap.percent,
+                    differingQuestions = com.tscan.scanertestov.feature.reports.ReportDuplicates.differingQuestions(snap, old),
+                    sameStudentByName = snap.fullName != null && old.fullName != null,
+                    remaining = dupQueue.size - 1,
+                )
+            },
+            assignRequestIndex = assignRequest,
         ),
         onAction = { action ->
             when (action) {
@@ -91,23 +136,60 @@ fun BatchResultsRoute(navController: NavHostController) {
                 BatchResultsAction.OpenReports -> handleBatchResultsAction(navController, action)
                 is BatchResultsAction.SendWorkToReports -> {
                     val entry = entries.getOrNull(action.itemIndex)
-                    if (entry != null) {
-                        entry.toReportsSnapshot(action.itemIndex)?.let { ReportsSelectedWorksStore.upsert(it) }
-                        exportedIndices[action.itemIndex] = true
+                    entry?.toReportsSnapshot(run, action.itemIndex)?.let { sendOrQueue(action.itemIndex, it) }
+                }
+                BatchResultsAction.AssignRequestHandled -> assignRequest = null
+                BatchResultsAction.DuplicateKeepExisting -> {
+                    dupQueue.removeFirstOrNull()?.second?.sheetPath?.let { runCatching { java.io.File(it).delete() } }
+                }
+                BatchResultsAction.DuplicateReplace -> {
+                    dupQueue.removeFirstOrNull()?.let { (index, snap, old) ->
+                        ReportsSelectedWorksStore.remove(old.sourceKey)
+                        if (old.runId == runId) {
+                            old.sourceKey.substringAfter('#').toIntOrNull()?.let { exportedIndices.remove(it) }
+                        }
+                        ReportsSelectedWorksStore.upsert(snap)
+                        exportedIndices[index] = true
                     }
+                }
+                BatchResultsAction.DuplicateOtherStudent -> {
+                    dupQueue.removeFirstOrNull()?.let { (index, snap, _) ->
+                        snap.sheetPath?.let { runCatching { java.io.File(it).delete() } }
+                        assignRequest = index
+                    }
+                }
+                is BatchResultsAction.RemoveWorkFromReports -> {
+                    ReportsSelectedWorksStore.remove(reportSourceKey(runId, action.itemIndex))
+                    exportedIndices.remove(action.itemIndex)
                 }
                 BatchResultsAction.SendAllToReports -> {
-                    val snapshots = entries.mapIndexedNotNull { index, entry -> entry.toReportsSnapshot(index) }
-                    ReportsSelectedWorksStore.upsertAll(snapshots)
-                    entries.indices.forEach { index ->
-                        if (entries[index].toReportsSnapshot(index) != null) exportedIndices[index] = true
+                    entries.forEachIndexed { index, entry ->
+                        if (exportedIndices[index] == true) return@forEachIndexed
+                        entry.toReportsSnapshot(run, index)?.let { sendOrQueue(index, it) }
                     }
                 }
-                is BatchResultsAction.MarkFixedAsAnswered -> fixedDecisions[action.key] = true
-                is BatchResultsAction.MarkFixedAsEmpty -> fixedDecisions[action.key] = false
+                is BatchResultsAction.MarkFixedAsAnswered -> {
+                    fixedDecisions[action.key] = true
+                    BatchLastRunStore.setDecision(context.applicationContext, action.key, true)
+                }
+                is BatchResultsAction.AssignStudent -> {
+                    val value = BatchManualName(action.surname.trim(), action.name.trim(), action.className)
+                    manualNames[action.itemIndex] = value
+                    BatchLastRunStore.setManualName(context.applicationContext, action.itemIndex, value)
+                    // Если работа уже в отчёте — обновляем там имя.
+                    if (exportedIndices[action.itemIndex] == true) {
+                        val e = buildResultEntries(runItems, effectiveDecisions, fixedDecisions, manualNames, gradingCriteria)
+                        e.getOrNull(action.itemIndex)?.toReportsSnapshot(run, action.itemIndex)?.let { ReportsSelectedWorksStore.upsert(it) }
+                    }
+                }
+                is BatchResultsAction.MarkFixedAsEmpty -> {
+                    fixedDecisions[action.key] = false
+                    BatchLastRunStore.setDecision(context.applicationContext, action.key, false)
+                }
             }
         }
     )
+    }
 }
 
 private fun buildSummary(entries: List<BatchResultEntryState>): BatchResultsSummary {
@@ -139,8 +221,11 @@ private fun normalizeWorkLabel(s: String): String =
 private fun buildResultEntries(
     runItems: List<BatchRunItemResult>,
     decisions: Map<String, Boolean>,
+    explicitDecisions: Map<String, Boolean>,
+    manualNames: Map<Int, BatchManualName>,
     gradingCriteria: GradingCriteriaConfig,
 ): List<BatchResultEntryState> = runItems.mapIndexed { itemIndex, item ->
+    val manual = manualNames[itemIndex]
     val error = item.error
     if (error != null) {
         return@mapIndexed BatchResultEntryState(
@@ -151,7 +236,8 @@ private fun buildResultEntries(
             scoreLine = error,
             layoutLine = item.layoutLabel,
             details = emptyList(),
-            previewBitmap = item.omr?.sheetCropBitmap,
+            previewBitmap = item.thumbnail,
+            sheetImagePath = item.sheetImagePath,
             grade = null,
             percent = null,
             scoreCorrect = null,
@@ -191,6 +277,10 @@ private fun buildResultEntries(
     val percent = if (scores.isEmpty()) 0f else (scores.sumOf { it.score.toDouble() }.toFloat() / scores.size) * 100f
     val pointsSum = scores.sumOf { it.score.toDouble() }
     val unresolved = omr.fixedCells.count { decisions[fixedCellKey(itemIndex, it)] == null }
+    val autoResolved = omr.fixedCells.count {
+        val k = fixedCellKey(itemIndex, it)
+        explicitDecisions[k] == null && decisions[k] != null
+    }
     val (detailRows, questionWrongTotal) = buildQuestionDetailRows(
         scores = scores,
         answerKey = item.config.answerKey,
@@ -215,13 +305,15 @@ private fun buildResultEntries(
         scoreLine = "$correct/${item.config.questionsCount} · ${"%.1f".format(Locale.US, percent)}%",
         layoutLine = item.layoutLabel,
         details = details,
-        previewBitmap = omr.sheetCropBitmap,
+        previewBitmap = item.thumbnail,
+        sheetImagePath = item.sheetImagePath,
         grade = grade,
         percent = percent,
         scoreCorrect = correct,
         scoreTotal = item.config.questionsCount,
         correctionsTotal = omr.fixedCells.size,
         correctionsUnresolved = unresolved,
+        correctionsAuto = autoResolved,
         detailRows = detailRows,
         questionWrongTotal = questionWrongTotal,
         sheetMarkerPredictions = adjustedPredictions,
@@ -229,12 +321,18 @@ private fun buildResultEntries(
         sheetMarkerColumnFrames = omr.columnFrames,
         reportQuestionScores = scores,
         reportVariant = item.detectedVariant,
-        reportStudentSurname = item.detectedStudentSurname,
-        reportStudentName = item.detectedStudentName,
-        reportJournalClassName = item.detectedJournalClassName,
+        reportStudentSurname = manual?.surname?.ifBlank { null } ?: item.detectedStudentSurname,
+        reportStudentName = manual?.name?.ifBlank { null } ?: item.detectedStudentName,
+        reportJournalClassName = manual?.className ?: item.detectedJournalClassName,
+        nameCropPath = item.nameCropPath,
+        nameAssignedManually = manual != null,
+        studentNote = if (manual != null) null else item.studentNote,
+        warning = if (manual != null) item.warning?.takeIf { it.startsWith("Выдан") } else item.warning,
         reportStrictScoring = item.config.strictScoring,
         reportPartialCompletedCount = partialCompletedCount,
         reportHasMultiChoiceQuestions = hasMultiChoiceQuestions,
+        reportAnswerKey = item.config.answerKey,
+        reportChoicesCount = item.config.choicesCount,
     )
 }
 
@@ -270,9 +368,14 @@ private fun buildQuestionDetailsLines(
     return head + lines
 }
 
+/**
+ * Ячейки для блока «Исправления». Решённые учителем скрываются; решённые автоматически показываются
+ * с пометкой ✎, чтобы учитель видел их и мог изменить одним нажатием.
+ */
 private fun buildFixedUiItems(
     runItems: List<BatchRunItemResult>,
     decisions: Map<String, Boolean>,
+    autoDecisions: Map<String, Boolean>,
     showOnlyUnresolved: Boolean,
 ): List<BatchFixedCellUiItem> = runItems.flatMapIndexed { itemIndex, item ->
     val omr = item.omr ?: return@flatMapIndexed emptyList()
@@ -280,28 +383,32 @@ private fun buildFixedUiItems(
         val key = fixedCellKey(itemIndex, fixed)
         val currentDecision = decisions[key]
         if (showOnlyUnresolved && currentDecision != null) return@mapNotNull null
+        val auto = currentDecision == null && autoDecisions[key] != null
         BatchFixedCellUiItem(
             key = key,
             itemIndex = itemIndex,
             itemTitle = item.title,
             questionIndex = fixed.questionIndex,
             choiceIndex = fixed.choiceIndex,
-            includeAsAnswer = currentDecision,
+            includeAsAnswer = currentDecision ?: autoDecisions[key],
+            autoDecided = auto,
         )
     }
 }
 
-private fun reportSourceKey(itemIndex: Int, entry: BatchResultEntryState): String =
-    "${itemIndex}_${entry.title}"
+/** Ключ уникален в пределах прогона: работы разных прогонов не перезаписывают друг друга в отчётах. */
+private fun reportSourceKey(runId: String, itemIndex: Int): String = "${runId}#${itemIndex}"
 
-private fun BatchResultEntryState.toReportsSnapshot(itemIndex: Int): ReportsWorkSnapshot? {
+private fun BatchResultEntryState.toReportsSnapshot(run: BatchRun?, itemIndex: Int): ReportsWorkSnapshot? {
+    val runId = run?.runId.orEmpty()
     val gradeValue = grade ?: return null
     val percentValue = percent ?: return null
     val correct = scoreCorrect ?: return null
     val total = scoreTotal ?: return null
     if (reportQuestionScores.isEmpty()) return null
+    val key = reportSourceKey(runId, itemIndex)
     return ReportsWorkSnapshot(
-        sourceKey = reportSourceKey(itemIndex, this),
+        sourceKey = key,
         title = title,
         grade = gradeValue,
         percent = percentValue,
@@ -315,6 +422,13 @@ private fun BatchResultEntryState.toReportsSnapshot(itemIndex: Int): ReportsWork
         strictScoring = reportStrictScoring,
         partialCompletedCount = reportPartialCompletedCount,
         hasMultiChoiceQuestions = reportHasMultiChoiceQuestions,
+        testId = run?.testId,
+        testTitle = run?.testTitle,
+        runId = runId,
+        checkedAtMs = run?.createdAtMs ?: System.currentTimeMillis(),
+        answerKey = reportAnswerKey,
+        choicesCount = reportChoicesCount,
+        sheetPath = ReportsSelectedWorksStore.copySheet(sheetImagePath, key),
     )
 }
 

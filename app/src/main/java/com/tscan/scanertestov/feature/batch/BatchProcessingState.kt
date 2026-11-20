@@ -35,15 +35,19 @@ data class BatchWorkItem(
     val detectedStudentNameRawText: String? = null,
     val studentNameDetectionError: String? = null,
     val detectedJournalClassName: String? = null,
+    /** Код ученика с именного бланка v2 (1–63), если прочитан. */
+    val studentCode: Int? = null,
+    /** Картинка места для имени с бланка (для «Чья работа?»), файл в filesDir/batch_names. */
+    val nameCropPath: String? = null,
 )
 
 data class BatchProcessingState(
     val screenTitle: String = "Проверка работ по фото",
     val hintText: String = "Пройдите шаги ниже по порядку: добавьте фото, задайте ответы и нажмите «Проверить работы».",
-    val captureButtonText: String = "Сделать фото",
+    val captureButtonText: String = "Камера",
     val loadButtonText: String = "Галерея",
     val capturePhotoGuideText: String =
-        "«Сделать фото» открывает камеру приложения: в белый контур вместите чёрную рамку бланка, держите телефон параллельно листу.",
+        "Кнопка «Камера» открывает съёмку бланков: в белый контур вместите чёрную рамку бланка, держите телефон параллельно листу.",
     val autoRecognitionToggleText: String = "Авто-распознавание",
     val runQueuedRecognitionButtonText: String = "Распознать уже загруженные",
     val startButtonText: String = "Проверить работы",
@@ -80,6 +84,11 @@ data class BatchProcessingState(
     val choicesCount: Int = 4,
     val correctAnswers: List<Set<Int>> = List(5) { emptySet() },
     val correctAnswersByVariant: Map<Int, List<Set<Int>>> = emptyMap(),
+    /** Критерии оценки загруженного теста (JSON); null — общие из Настроек. */
+    val gradingCriteriaJson: String? = null,
+    /** Тест, с которым проверяем (для отчёта по тесту); null — ключ задан вручную. */
+    val testId: String? = null,
+    val testTitle: String? = null,
     val criteriaNameDraft: String = "",
     val savedCriteria: List<BatchCriteriaPreset> = emptyList(),
     val savedCriteriaExpanded: Boolean = false,

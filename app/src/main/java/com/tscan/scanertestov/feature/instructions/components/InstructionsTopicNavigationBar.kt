@@ -4,6 +4,7 @@ package com.tscan.scanertestov.feature.instructions.components
  * Описание: панель «Назад / Далее» для перехода между разделами инструкции без возврата к оглавлению.
  */
 import androidx.compose.foundation.layout.Arrangement
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -40,7 +41,7 @@ internal fun InstructionsTopicNavigationBar(
                 text = "Раздел ${topicIndex + 1} из $topicsCount",
                 style = MaterialTheme.typography.labelLarge,
                 fontWeight = FontWeight.Medium,
-                color = Color(0xFF8FAFC4),
+                color = Scrapbook.InkMuted,
             )
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -59,7 +60,7 @@ internal fun InstructionsTopicNavigationBar(
                         Text(
                             text = previousTopic.title,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFB8D4E8),
+                            color = Scrapbook.InkMuted,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -91,7 +92,7 @@ internal fun InstructionsTopicNavigationBar(
                         Text(
                             text = nextTopic.title,
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFFFFE08A),
+                            color = Scrapbook.AccentInk,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                             modifier = Modifier.fillMaxWidth(),
@@ -111,7 +112,7 @@ internal fun InstructionsTopicNavigationBar(
                         Text(
                             text = "Вы прошли все разделы",
                             style = MaterialTheme.typography.labelSmall,
-                            color = Color(0xFF8FAFC4),
+                            color = Scrapbook.InkMuted,
                         )
                     }
                 }

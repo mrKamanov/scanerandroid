@@ -51,6 +51,23 @@ internal object BatchSheetGridLayout {
         val rows = questionsCount.coerceAtLeast(1)
         val cols = choicesCount.coerceAtLeast(1)
         val useTwoColumns = columnCount == 2
+        // Новый движок всегда передаёт точные рамки (и для одного столбца) — угадывать не нужно.
+        if (columnFrames != null && columnFrames.isNotEmpty()) {
+            for (frame in columnFrames) {
+                forEachUniformGrid(
+                    left = frame.innerLeft.toFloat(),
+                    top = frame.innerTop.toFloat(),
+                    width = frame.width.toFloat(),
+                    height = frame.height.toFloat(),
+                    questionStart = frame.questionStart,
+                    rows = frame.questionCount,
+                    cols = cols,
+                    block = block,
+                    pitchRows = frame.frameBubbleRows,
+                )
+            }
+            return
+        }
         val inner = BatchInnerGridDetector.detectInnerRect(bitmap, questionsCount, choicesCount)
         val innerLeft = inner.left.toFloat()
         val innerTop = inner.top.toFloat()

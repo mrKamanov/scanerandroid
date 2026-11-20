@@ -23,6 +23,8 @@ fun BlankBubbleCanvas(
     blankScale: Float,
     isBlankSelected: Boolean,
     modifier: Modifier = Modifier,
+    /** Шапка бланка v2 (рисуется тем же кодом, что при печати) или null — старый формат с уголками. */
+    v2: BlankV2Options? = null,
 ) {
     val frameFill = remember {
         Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -144,7 +146,7 @@ fun BlankBubbleCanvas(
                 nc.drawRect(rect, frameStroke)
             }
             cornerMarkStroke.strokeWidth = maxOf(renderParams.borderWidthPx * 1.45f, 3f)
-            drawBlankBubbleLayoutCornerMarksOnCanvas(nc, layout, cornerMarkStroke)
+            if (v2 == null) drawBlankBubbleLayoutCornerMarksOnCanvas(nc, layout, cornerMarkStroke)
 
             for (b in layout.bubbles) {
                 val hidden = b.id in hiddenBubbleIds
@@ -184,6 +186,10 @@ fun BlankBubbleCanvas(
                 nc.drawRect(rect, selectedOutlineStroke)
             }
 
+            v2?.let { o ->
+                val br = blankBubbleLayoutBoundingRect(layout)
+                BlankV2Print.draw(nc, br.left, br.top, br.right - br.left, br.bottom - br.top, o, withBackground = true)
+            }
             nc.restore()
         }
     }

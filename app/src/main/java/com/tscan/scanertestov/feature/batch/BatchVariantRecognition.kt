@@ -68,6 +68,7 @@ fun recognizeVariantFromBitmap(
             questionCount = questionCount,
             optionCount = optionCount,
             columnCount = columnCount,
+            context = context,
         )
         try {
             recognizeVariantFromVariantCropMat(context, variantCrop, maxVariantHint)

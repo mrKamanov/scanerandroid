@@ -65,15 +65,70 @@ fun scaleBitmapForPreview(source: Bitmap, maxSide: Int): Bitmap {
     return scaled
 }
 
-fun decodeBitmapFromContentUri(context: Context, uri: Uri): Bitmap? {
+/**
+ * Максимальная сторона изображения, с которой работает распознавание.
+ * 12 МП (4032×3024) проходит без потерь; фото 48–200 МП уменьшаются — иначе один кадр
+ * занимает 150–800 МБ памяти и приложение падает с OutOfMemoryError.
+ */
+const val BATCH_DECODE_MAX_SIDE: Int = 4096
+
+/**
+ * Декодирует изображение по URI с учётом EXIF-поворота и ограничением размера [maxSide].
+ * Блокирующий вызов: выполнять только в фоновом потоке (Dispatchers.IO / Default).
+ */
+fun decodeBitmapFromContentUri(
+    context: Context,
+    uri: Uri,
+    maxSide: Int = BATCH_DECODE_MAX_SIDE,
+): Bitmap? {
     return runCatching {
         val bytes = context.contentResolver.openInputStream(uri)?.use { it.readBytes() }
             ?: return@runCatching null
-        val decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        val longest = maxOf(bounds.outWidth, bounds.outHeight)
+        if (longest <= 0) return@runCatching null
+        var sample = 1
+        // Самый крупный inSampleSize, при котором сторона ещё не меньше maxSide.
+        while (longest / (sample * 2) >= maxSide) sample *= 2
+        val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+        var decoded = BitmapFactory.decodeByteArray(bytes, 0, bytes.size, opts)
             ?: return@runCatching null
+        if (maxOf(decoded.width, decoded.height) > maxSide) {
+            decoded = scaleBitmapForPreview(decoded, maxSide)
+        }
         val degrees = exifRotationDegrees(context, uri, bytes)
         applyRotationDegrees(decoded, degrees)
     }.getOrNull()
+}
+
+/** Удаляет файл снимка, если URI указывает на собственный каталог камеры приложения. */
+fun deleteOwnBatchCaptureFile(context: Context, contentUri: String) {
+    runCatching {
+        val uri = Uri.parse(contentUri)
+        val authority = "${context.packageName}.fileprovider"
+        if (uri.authority != authority) return
+        val name = uri.lastPathSegment ?: return
+        val dir = File(context.filesDir, CAMERA_SUBDIR)
+        val file = File(dir, File(name).name)
+        if (file.parentFile?.canonicalPath == dir.canonicalPath && file.exists()) {
+            file.delete()
+        }
+    }
+}
+
+/**
+ * Удаляет снимки камеры, на которые больше не ссылается очередь.
+ * Вызывается при холодном старте (очередь пуста) и после очистки очереди.
+ */
+fun purgeBatchCaptureFiles(context: Context, keepUris: Collection<String> = emptyList()) {
+    runCatching {
+        val dir = File(context.filesDir, CAMERA_SUBDIR)
+        val keepNames = keepUris.mapNotNull { Uri.parse(it).lastPathSegment?.let { s -> File(s).name } }.toSet()
+        dir.listFiles()?.forEach { f ->
+            if (f.isFile && f.name !in keepNames) f.delete()
+        }
+    }
 }
 
 private fun exifRotationDegrees(context: Context, uri: Uri, cachedBytes: ByteArray?): Int {

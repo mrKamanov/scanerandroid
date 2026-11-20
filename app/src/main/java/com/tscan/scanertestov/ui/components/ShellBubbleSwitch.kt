@@ -31,13 +31,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import com.tscan.scanertestov.feature.mainmenu.components.mainMenuBubbleGradient
+import com.tscan.scanertestov.ui.theme.Scrapbook
 
-private val BubbleTrackBorder = Color.White.copy(alpha = 0.42f)
-private val BubbleThumbBorder = Color.White.copy(alpha = 0.52f)
+private val BubbleTrackBorder = Scrapbook.Ink
+private val BubbleThumbBorder = Scrapbook.Ink
 
-private val TrackOffTop = Color(0xFF5C6F86)
-private val TrackOffBottom = Color(0xFF3D5268)
+private val TrackOffTop = Color(0xFFE4DDCF)
+private val TrackOffBottom = Color(0xFFE4DDCF)
 
 @Composable
 fun ShellBubbleSwitch(
@@ -47,7 +47,8 @@ fun ShellBubbleSwitch(
     enabled: Boolean = true,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val (onTop, onBottom) = mainMenuBubbleGradient(0)
+    val onTop = Scrapbook.Mint
+    val onBottom = Scrapbook.Mint
     val thumbTravel = 22.dp
     val thumbShift by animateDpAsState(
         targetValue = if (checked) thumbTravel else 0.dp,
@@ -70,49 +71,29 @@ fun ShellBubbleSwitch(
         modifier = modifier
             .width(56.dp)
             .height(34.dp)
-            .shadow(10.dp, pill, clip = false, ambientColor = ambient, spotColor = spot)
+            .stickerShadow(offset = 2.dp, cornerRadius = 17.dp, enabled = enabled)
             .clip(pill)
             .background(trackBrush)
-            .border(1.5.dp, BubbleTrackBorder, pill)
+            .border(2.dp, BubbleTrackBorder, pill)
             .toggleable(
                 value = checked,
                 enabled = enabled,
                 role = Role.Switch,
                 onValueChange = onCheckedChange,
                 interactionSource = interactionSource,
-                indication = ripple(color = Color.White.copy(alpha = 0.22f)),
+                indication = ripple(color = Scrapbook.Ink.copy(alpha = 0.2f)),
             )
             .graphicsLayer { alpha = if (enabled) 1f else 0.52f },
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopStart)
-                .padding(start = 6.dp, top = 4.dp)
-                .size(18.dp)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color.White.copy(alpha = 0.38f),
-                            Color.Transparent,
-                        ),
-                    ),
-                    shape = CircleShape,
-                ),
-        )
         Box(
             modifier = Modifier
                 .align(Alignment.CenterStart)
                 .padding(start = 4.dp)
                 .offset(x = thumbShift)
                 .size(26.dp)
-                .shadow(6.dp, CircleShape, clip = false, ambientColor = ambient, spotColor = spot)
                 .clip(CircleShape)
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color(0xFFF8FAFD), Color(0xFFD8E4F0)),
-                    ),
-                )
-                .border(1.dp, BubbleThumbBorder, CircleShape),
+                .background(Color.White)
+                .border(2.dp, BubbleThumbBorder, CircleShape),
         )
     }
 }

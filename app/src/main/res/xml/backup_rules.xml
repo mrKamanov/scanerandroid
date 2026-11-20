@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Описание: правила резервного копирования (Android 6–11). Фото бланков и кэш моделей в копию не попадают. -->
+<full-backup-content>
+    <exclude domain="file" path="batch_capture/" />
+    <exclude domain="file" path="batch_runs/" />
+    <exclude domain="file" path="batch_names/" />
+    <exclude domain="file" path="reports/sheets/" />
+</full-backup-content>

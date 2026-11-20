@@ -58,6 +58,52 @@ fun clampTextPositionOnSheet(position: Offset): Offset = Offset(
 )
 
 fun clampTextScale(scale: Float): Float = scale.coerceIn(0.7f, 2.2f)
+
+/** Примерный прямоугольник надписи на листе (логические единицы): ширина по числу знаков, высота по шрифту. */
+private fun textBlockRect(b: BlankTextBlock, at: Offset = b.position): androidx.compose.ui.geometry.Rect {
+    val size = clampTextFontSizePx(b.fontSizePx) * clampTextScale(b.scale)
+    val w = (b.text.length.coerceAtLeast(4) * size * 0.56f).coerceAtMost(BlankSheetSpec.LOGICAL_WIDTH_PX - 12f)
+    val h = size * 1.3f
+    return androidx.compose.ui.geometry.Rect(at.x, at.y, at.x + w, at.y + h)
+}
+
+/**
+ * Включили надпись — ставим её туда, где её видно: если её место занято сеткой кружков (вместе с метками
+ * и шапкой бланка v2) или другой надписью, или она за краем листа — ищем ближайшее свободное место (сначала
+ * рядом по вертикали, затем по всему листу). Раньше надпись появлялась на старом месте — под сдвинутым
+ * бланком, — и её приходилось вытаскивать.
+ */
+fun placeTextBlockInFreeSpace(
+    block: BlankTextBlock,
+    blocks: List<BlankTextBlock>,
+    layout: BlankBubbleLayout,
+    pan: Offset,
+    scale: Float,
+): BlankTextBlock {
+    val g = blankLayoutBoundingRectTransformed(layout, pan, scale)
+    val o = BlankV2Print.outset(layout)
+    val co = cornerMarkOutset(layout)
+    val busy = ArrayList<androidx.compose.ui.geometry.Rect>()
+    busy += androidx.compose.ui.geometry.Rect(
+        g.left - maxOf(o[0], co) * scale, g.top - maxOf(o[1], co) * scale,
+        g.right + maxOf(o[2], co) * scale, g.bottom + maxOf(o[3], co) * scale,
+    )
+    blocks.filter { it.isVisible && it.id != block.id }.forEach { busy += textBlockRect(it).inflate(4f) }
+    fun free(at: Offset): Boolean {
+        val r = textBlockRect(block, at)
+        if (r.left < 6f || r.top < 6f || r.right > BlankSheetSpec.LOGICAL_WIDTH_PX - 6f || r.bottom > BlankSheetSpec.LOGICAL_HEIGHT_PX - 6f) return false
+        return busy.none { it.overlaps(r) }
+    }
+    val start = clampTextPositionOnSheet(block.position)
+    if (free(start)) return block.copy(position = start)
+    // Ближе к прежнему месту по вертикали, затем — с левого поля, затем — по всему листу.
+    val ys = (0..((BlankSheetSpec.LOGICAL_HEIGHT_PX - 20f) / 8f).toInt()).map { it * 8f + 10f }.sortedBy { kotlin.math.abs(it - start.y) }
+    for (x in listOf(start.x, 40f, 20f)) for (y in ys) {
+        val at = Offset(x, y)
+        if (free(at)) return block.copy(position = at)
+    }
+    return block.copy(position = start)
+}
 fun clampTextFontSizePx(size: Float): Float = size.coerceIn(10f, 72f)
 
 enum class AlignmentGuideAxis { Vertical, Horizontal }

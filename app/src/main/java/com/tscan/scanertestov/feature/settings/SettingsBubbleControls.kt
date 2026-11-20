@@ -3,7 +3,9 @@ package com.tscan.scanertestov.feature.settings
 /**
  * Описание: кнопки в стиле «пузырьков» на экране настроек.
  */
+import com.tscan.scanertestov.ui.components.ShellBubblePrimaryButtonRow
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RestartAlt
@@ -26,21 +28,14 @@ fun SettingsBubbleIconButton(
 ) {
     val (top, bottom) = mainMenuBubbleGradient(paletteIndex)
     val interactionSource = remember { MutableInteractionSource() }
-    RealtimeBubbleIconButton(
+    // Подписанная кнопка вместо одной иконки: «↺» без текста было непонятно.
+    ShellBubblePrimaryButtonRow(
+        text = contentDescription,
         onClick = onClick,
-        contentDescription = contentDescription,
-        topColor = top,
-        bottomColor = bottom,
-        size = 56.dp,
-        enabled = enabled,
-        interactionSource = interactionSource,
         modifier = modifier,
-    ) {
-        Icon(
-            imageVector = Icons.Filled.RestartAlt,
-            contentDescription = null,
-            modifier = Modifier.size(30.dp),
-            tint = Color.White,
-        )
-    }
+        enabled = enabled,
+        paletteIndex = paletteIndex,
+        fillMaxWidth = false,
+        leading = { Icon(Icons.Filled.RestartAlt, contentDescription = null, modifier = Modifier.size(22.dp)) },
+    )
 }

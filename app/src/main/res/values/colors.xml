@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Единый фон оболочки (как ScanShellBackdrop в Compose) -->
-    <color name="scan_shell_fill">#071F31</color>
+    <color name="scan_shell_fill">#E9E2D4</color>
     <!-- Палитра запуска / фона (Nord-подобная, как в приложении) -->
     <color name="nord_background">#2E3440</color>
     <color name="nord_surface_sheet">#3B4252</color>

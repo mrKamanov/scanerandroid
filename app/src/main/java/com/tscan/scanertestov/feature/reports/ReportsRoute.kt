@@ -1,293 +1,353 @@
 package com.tscan.scanertestov.feature.reports
 
 /**
- * Описание: маршрут экрана отчётов — состояние из выбранных работ, очистка, экспорт Excel и навигация назад.
+ * Описание: маршрут экрана отчётов — список отчётов по тестам, открытый отчёт, выгрузка
+ * (окно «Выгрузить отчёт»), просмотр бланка ученика, смена ученика, удаление и переименование.
  */
+import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.widget.Toast
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.NavHostController
 import com.tscan.scanertestov.feature.blankeditor.shareExportedFile
+import com.tscan.scanertestov.ui.components.SettingsShellCard
+import com.tscan.scanertestov.ui.components.ShellBubblePrimaryButton
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import kotlin.math.roundToInt
+
+/** Свои названия отчётов (переименование), по ключу отчёта. */
+internal object ReportTitles {
+    private const val PREFS = "report_titles"
+    fun all(context: Context): Map<String, String> =
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).all.mapNotNull { (k, v) -> (v as? String)?.let { k to it } }.toMap()
+    fun set(context: Context, key: String, title: String?) {
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().apply {
+            if (title.isNullOrBlank()) remove(key) else putString(key, title)
+        }.apply()
+    }
+}
 
 @Composable
 fun ReportsRoute(navController: NavHostController) {
-    var reloadToken by remember { mutableIntStateOf(0) }
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val state = remember(reloadToken) {
-        buildReportsState(ReportsSelectedWorksStore.works)
+    var reload by remember { mutableIntStateOf(0) }
+    var openKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var classFilter by rememberSaveable { mutableStateOf<String?>(null) }
+    var tab by rememberSaveable { mutableStateOf(ReportTab.Overview) }
+    var focusQuestion by rememberSaveable { mutableStateOf<Int?>(null) }
+    var variantClass by rememberSaveable { mutableStateOf<String?>(null) }
+    var studentQuery by rememberSaveable { mutableStateOf("") }
+    var studentFilter by rememberSaveable { mutableStateOf(StudentFilter.All) }
+    var exportKey by remember { mutableStateOf<String?>(null) }
+    var sheetKey by remember { mutableStateOf<String?>(null) }
+    var changeKey by remember { mutableStateOf<String?>(null) }
+
+    val roster = remember { com.tscan.scanertestov.feature.journals.JournalRepository(context).loadAll() }
+    val works = remember(reload) { ReportsSelectedWorksStore.works }
+    val titles = remember(reload) { ReportTitles.all(context) }
+    val list = remember(works, titles) { TestReportBuilder.list(works, titles) }
+    val report = remember(works, titles, openKey, classFilter) {
+        openKey?.let { TestReportBuilder.build(works, it, classFilter, titles) }
     }
-    ReportsScreen(
-        state = state,
-        onAction = { action ->
-            when (action) {
-                ReportsAction.Clear -> {
-                    ReportsSelectedWorksStore.clear()
-                    reloadToken++
+    if (openKey != null && report == null) openKey = null
+
+    fun doExport(key: String, opts: ReportExportOptions) {
+        val rep = TestReportBuilder.build(ReportsSelectedWorksStore.works, key, opts.className, titles) ?: return
+        scope.launch(Dispatchers.IO) {
+            val app = context.applicationContext
+            val file = runCatching {
+                when (opts.format) {
+                    ReportExportFormat.Excel -> ReportsExcelExporter(app).export(rep, opts)
+                    ReportExportFormat.Pdf -> ReportsPdfExporter(app).export(rep, opts)
                 }
-                ReportsAction.ExportExcel -> {
-                    val exportState = buildReportsState(ReportsSelectedWorksStore.works)
-                    if (exportState.summary != null) {
-                        scope.launch(Dispatchers.IO) {
-                            val file =
-                                ReportsExcelExporter(context.applicationContext).exportToExcel(exportState)
-                            withContext(Dispatchers.Main) {
-                                if (file != null) {
-                                    shareExportedFile(context.applicationContext, file)
-                                } else {
-                                    Toast.makeText(
-                                            context,
-                                            "Не удалось создать Excel",
-                                            Toast.LENGTH_SHORT,
-                                        )
-                                        .show()
-                                }
-                            }
-                        }
-                    }
-                }
-                ReportsAction.Back -> navController.popBackStack()
-                ReportsAction.ExportPdf -> {
-                    val exportState = buildReportsState(ReportsSelectedWorksStore.works)
-                    if (exportState.summary != null) {
-                        scope.launch(Dispatchers.IO) {
-                            val file =
-                                ReportsPdfExporter(context.applicationContext).exportToPdf(exportState)
-                            withContext(Dispatchers.Main) {
-                                if (file != null) {
-                                    shareExportedFile(context.applicationContext, file)
-                                } else {
-                                    Toast.makeText(
-                                            context,
-                                            "Не удалось создать PDF",
-                                            Toast.LENGTH_SHORT,
-                                        )
-                                        .show()
-                                }
-                            }
-                        }
-                    }
-                }
+            }.onFailure { android.util.Log.e("Reports", "export failed", it) }.getOrNull()
+            withContext(Dispatchers.Main) {
+                if (file != null) shareExportedFile(app, file)
+                else Toast.makeText(context, "Не удалось создать файл", Toast.LENGTH_SHORT).show()
             }
-        },
-    )
+        }
+    }
+
+    BackHandler(enabled = openKey != null) { openKey = null }
+
+    com.tscan.scanertestov.ui.components.ScreenTour(
+        "reports_v2",
+        com.tscan.scanertestov.ui.components.ScreenTours.Reports,
+        enabled = report != null,
+    ) {
+        ReportsScreen(
+            state = ReportsState(
+                list = list,
+                report = report,
+                tab = tab,
+                questionFocus = focusQuestion,
+                variantClass = variantClass,
+                studentQuery = studentQuery,
+                studentFilter = studentFilter,
+                roster = roster,
+            ),
+            onAction = { action ->
+                when (action) {
+                    ReportsAction.Back -> if (openKey != null) openKey = null else navController.popBackStack()
+                    is ReportsAction.OpenReport -> {
+                        openKey = action.key
+                        classFilter = null; tab = ReportTab.Overview; focusQuestion = null
+                        variantClass = null; studentQuery = ""; studentFilter = StudentFilter.All
+                    }
+                    is ReportsAction.SelectTab -> tab = action.tab
+                    is ReportsAction.FilterClass -> classFilter = action.className
+                    is ReportsAction.FocusQuestion -> focusQuestion = action.number
+                    is ReportsAction.VariantClass -> variantClass = action.className
+                    is ReportsAction.StudentQuery -> studentQuery = action.query
+                    is ReportsAction.StudentFilterChanged -> studentFilter = action.filter
+                    is ReportsAction.RemoveWork -> { ReportsSelectedWorksStore.remove(action.sourceKey); reload++ }
+                    is ReportsAction.ChangeStudent -> {
+                        ReportsSelectedWorksStore.works.firstOrNull { it.sourceKey == action.sourceKey }?.let { w ->
+                            ReportsSelectedWorksStore.upsert(
+                                w.copy(studentSurname = action.surname, studentName = action.name, journalClassName = action.className ?: w.journalClassName),
+                            )
+                        }
+                        reload++
+                    }
+                    is ReportsAction.RenameReport -> { ReportTitles.set(context, action.key, action.title); reload++ }
+                    is ReportsAction.DeleteReport -> {
+                        ReportsSelectedWorksStore.removeReport(action.key)
+                        ReportTitles.set(context, action.key, null)
+                        if (openKey == action.key) openKey = null
+                        reload++
+                    }
+                    is ReportsAction.Export -> doExport(action.key, action.options)
+                }
+            },
+            onOpenSheet = { sheetKey = it },
+            onExportRequest = { exportKey = it },
+            onChangeStudentRequest = { changeKey = it },
+        )
+    }
+
+    exportKey?.let { key ->
+        val classes = remember(key, works) { works.filter { it.reportKey == key }.map { TestReportBuilder.classOf(it) }.distinct().sorted() }
+        ExportSheet(
+            title = list.firstOrNull { it.key == key }?.title.orEmpty(),
+            classes = classes,
+            initialClass = if (key == openKey) classFilter else null,
+            onDismiss = { exportKey = null },
+            onRun = { opts -> exportKey = null; doExport(key, opts) },
+        )
+    }
+
+    sheetKey?.let { key ->
+        val students = report?.students.orEmpty()
+        val idx = students.indexOfFirst { it.work.sourceKey == key }
+        SheetViewer(
+            row = students.getOrNull(idx),
+            position = idx,
+            total = students.size,
+            onPrev = { students.getOrNull(idx - 1)?.let { sheetKey = it.work.sourceKey } },
+            onNext = { students.getOrNull(idx + 1)?.let { sheetKey = it.work.sourceKey } },
+            onDismiss = { sheetKey = null },
+        )
+    }
+
+    changeKey?.let { key ->
+        val w = works.firstOrNull { it.sourceKey == key }
+        if (w == null) {
+            changeKey = null
+        } else {
+            val taken = works.filter { it.reportKey == w.reportKey && it.sourceKey != key }.mapNotNull { it.fullName }.toSet()
+            com.tscan.scanertestov.feature.batch.StudentPickerDialog(
+                workTitle = w.fullName ?: w.title,
+                nameCropPath = null,
+                roster = roster,
+                preferredClass = w.journalClassName,
+                alreadyAssigned = taken,
+                onPick = { s, n, c ->
+                    ReportsSelectedWorksStore.upsert(w.copy(studentSurname = s, studentName = n, journalClassName = c ?: w.journalClassName))
+                    changeKey = null
+                    reload++
+                },
+                onDismiss = { changeKey = null },
+            )
+        }
+    }
 }
 
-private fun buildReportsState(items: List<ReportsWorkSnapshot>): ReportsState {
-    if (items.isEmpty()) {
-        return ReportsState(
-            emptyText = "Отчет пуст. Добавьте работы кнопками «В отчет» на экране результатов пакетной проверки.",
-        )
-    }
-
-    val workItems = items.map { item ->
-        val correctQuestions = item.questionScores.filter { it.correct }.map { it.questionIndex + 1 }
-        val wrongQuestions = item.questionScores.filter { !it.correct }.map { it.questionIndex + 1 }
-        val fullName = listOfNotNull(item.studentSurname, item.studentName)
-            .joinToString(" ")
-            .trim()
-            .ifBlank { null }
-        ReportsWorkListItem(
-            title = item.title,
-            grade = item.grade,
-            percent = item.percent,
-            scoreText = "${item.scoreCorrect}/${item.scoreTotal}",
-            status = "Проверено",
-            correctQuestions = correctQuestions,
-            wrongQuestions = wrongQuestions,
-            variant = item.variant,
-            className = item.journalClassName,
-            studentDisplayName = fullName,
-            strictScoring = item.strictScoring,
-            partialCompletedCount = item.partialCompletedCount,
-            hasMultiChoiceQuestions = item.hasMultiChoiceQuestions,
-        )
-    }
-
-    val totalWorks = items.size
-    val averageGrade = items
-        .map { it.grade.toDouble() }
-        .average()
-        .takeIf { !it.isNaN() } ?: 0.0
-    val gradeDistributionRaw = (2..5).associateWith { grade ->
-        items.count { it.grade == grade }
-    }
-    val successCount = items.count { it.grade >= 3 }
-    val qualityCount = items.count { it.grade >= 4 }
-    val summary = ReportsSummaryStats(
-        totalWorks = totalWorks,
-        averageGrade = averageGrade,
-        successRatePercent = successCount * 100.0 / totalWorks,
-        qualityKnowledgePercent = qualityCount * 100.0 / totalWorks,
-    )
-
-    val gradeDistribution = (2..5).map { grade ->
-        val count = gradeDistributionRaw[grade] ?: 0
-        ReportsGradeDistributionItem(
-            grade = grade,
-            count = count,
-            percent = if (totalWorks == 0) 0.0 else count * 100.0 / totalWorks,
-        )
-    }
-
-    val wrongByQuestion = mutableMapOf<Int, Int>()
-    val questionSeenCount = mutableMapOf<Int, Int>()
-    val wrongSets = mutableListOf<Set<Int>>()
-    items.forEach { item ->
-        val questionScores = item.questionScores
-        val wrongSet = mutableSetOf<Int>()
-        questionScores.forEach { score ->
-            val q = score.questionIndex + 1
-            questionSeenCount[q] = (questionSeenCount[q] ?: 0) + 1
-            if (!score.correct) {
-                wrongByQuestion[q] = (wrongByQuestion[q] ?: 0) + 1
-                wrongSet += q
-            }
-        }
-        if (wrongSet.isNotEmpty()) wrongSets += wrongSet
-    }
-
-    val hardestQuestions = wrongByQuestion.entries
-        .sortedWith(compareByDescending<Map.Entry<Int, Int>> { it.value }.thenBy { it.key })
-        .take(5)
-        .map { (q, wrongCount) ->
-            val seen = questionSeenCount[q] ?: totalWorks
-            ReportsHardQuestionItem(
-                questionNumber = q,
-                wrongCount = wrongCount,
-                wrongPercent = if (seen == 0) 0.0 else wrongCount * 100.0 / seen,
-            )
-        }
-
-    val maxQuestion = questionSeenCount.keys.maxOrNull() ?: 0
-    val heatmap = (1..maxQuestion).map { q ->
-        val wrongCount = wrongByQuestion[q] ?: 0
-        val seen = questionSeenCount[q] ?: totalWorks
-        ReportsQuestionHeatmapItem(
-            questionNumber = q,
-            wrongCount = wrongCount,
-            wrongPercent = if (seen == 0) 0.0 else wrongCount * 100.0 / seen,
-        )
-    }
-
-    val pairCounts = mutableMapOf<Pair<Int, Int>, Int>()
-    wrongSets.forEach { wrongSet ->
-        val sorted = wrongSet.sorted()
-        for (i in 0 until sorted.size) {
-            for (j in i + 1 until sorted.size) {
-                val pair = sorted[i] to sorted[j]
-                pairCounts[pair] = (pairCounts[pair] ?: 0) + 1
-            }
-        }
-    }
-    val relatedErrors = pairCounts.entries
-        .sortedWith(compareByDescending<Map.Entry<Pair<Int, Int>, Int>> { it.value }.thenBy { it.key.first }.thenBy { it.key.second })
-        .take(5)
-        .map { (pair, count) ->
-            ReportsRelatedErrorItem(
-                firstQuestion = pair.first,
-                secondQuestion = pair.second,
-                togetherCount = count,
-            )
-        }
-
-    val groupedBySignature = items.groupBy { item ->
-        val signature = item.questionScores
-            .joinToString("|") { score ->
-                val selected = score.selectedChoices.sorted().joinToString(",")
-                "${score.questionIndex + 1}=$selected"
-            }
-        val classKey = item.journalClassName?.trim()?.ifBlank { "no-class" } ?: "no-class"
-        val variantKey = item.variant?.toString() ?: "no-variant"
-        "class=$classKey;variant=$variantKey;$signature"
-    }
-    val identicalWorks = groupedBySignature.values
-        .filter { it.size >= 2 }
-        .sortedByDescending { it.size }
-        .take(5)
-        .map { group ->
-            val classLabel = group.firstOrNull()?.journalClassName?.trim().orEmpty()
-            val variantLabel = group.firstOrNull()?.variant
-            val scopeLabel = buildString {
-                if (classLabel.isNotBlank()) append("класс $classLabel")
-                if (variantLabel != null) {
-                    if (isNotBlank()) append(", ")
-                    append("вариант $variantLabel")
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun ExportSheet(
+    title: String,
+    classes: List<String>,
+    initialClass: String?,
+    onRun: (ReportExportOptions) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var format by remember { mutableStateOf(ReportExportFormat.Excel) }
+    var cls by remember { mutableStateOf(initialClass) }
+    var summary by remember { mutableStateOf(true) }
+    var byClass by remember { mutableStateOf(true) }
+    var variants by remember { mutableStateOf(true) }
+    var questions by remember { mutableStateOf(true) }
+    var students by remember { mutableStateOf(true) }
+    var answers by remember { mutableStateOf(true) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        SettingsShellCard(modifier = Modifier.fillMaxWidth(0.94f)) {
+            Column(Modifier.heightIn(max = 640.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("Выгрузить отчёт", fontFamily = Scrapbook.HandFont, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.headlineMedium)
+                Text(title, style = MaterialTheme.typography.bodySmall, color = Scrapbook.InkMuted)
+                Text("Формат", style = MaterialTheme.typography.labelLarge, color = Scrapbook.InkMuted)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    FormatTile("Excel", "таблицы: можно считать и сортировать", format == ReportExportFormat.Excel, Modifier.weight(1f)) { format = ReportExportFormat.Excel }
+                    FormatTile("PDF", "для печати и отправки", format == ReportExportFormat.Pdf, Modifier.weight(1f)) { format = ReportExportFormat.Pdf }
                 }
-            }.ifBlank { "без привязки к классу/варианту" }
-            ReportsIdenticalWorksItem(
-                signature = "Совпадение ответов: ${group.size} работ ($scopeLabel)",
-                workTitles = group.map { it.title },
-            )
+                if (classes.size > 1) {
+                    Text("Классы", style = MaterialTheme.typography.labelLarge, color = Scrapbook.InkMuted)
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        (listOf<String?>(null) + classes).forEach { c ->
+                            val active = c == cls
+                            Text(
+                                c ?: "Все",
+                                fontWeight = FontWeight.Bold,
+                                color = if (active) Color.White else Scrapbook.Ink,
+                                modifier = Modifier
+                                    .background(if (active) Scrapbook.Ink else Scrapbook.Paper, androidx.compose.foundation.shape.RoundedCornerShape(10.dp))
+                                    .clickable { cls = c }
+                                    .padding(horizontal = 12.dp, vertical = 10.dp),
+                            )
+                        }
+                    }
+                }
+                Text("Что включить", style = MaterialTheme.typography.labelLarge, color = Scrapbook.InkMuted)
+                CheckLine("Сводка и оценки", summary) { summary = it }
+                if (classes.size > 1 && cls == null) CheckLine("Сравнение классов", byClass) { byClass = it }
+                CheckLine("Сравнение вариантов", variants) { variants = it }
+                CheckLine("Вопросы: карта и разбор", questions) { questions = it }
+                CheckLine("Список учеников", students) { students = it }
+                CheckLine("Ответы каждого ученика по вопросам", answers) { answers = it }
+                ShellBubblePrimaryButton(
+                    text = "Выгрузить и отправить",
+                    onClick = {
+                        onRun(ReportExportOptions(format, cls, summary, byClass && cls == null, variants, questions, students, answers))
+                    },
+                    enabled = summary || byClass || variants || questions || students,
+                    paletteIndex = 2,
+                )
+                Text(
+                    "Файл можно отправить в мессенджер, на почту или сохранить.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Scrapbook.InkMuted,
+                )
+            }
         }
-
-    val variantStats = items
-        .filter { it.variant != null }
-        .groupBy { it.variant!! }
-        .entries
-        .sortedBy { it.key }
-        .map { (variant, works) ->
-            ReportsVariantStatsItem(
-                variant = variant,
-                worksCount = works.size,
-                averagePercent = works.map { it.percent.toDouble() }.average().takeIf { !it.isNaN() } ?: 0.0,
-            )
-        }
-
-    val namedWorksCount = items.count {
-        !listOfNotNull(it.studentSurname, it.studentName).joinToString(" ").trim().isBlank()
     }
-    val unnamedWorksCount = items.size - namedWorksCount
+}
 
-    val variantComparison = if (variantStats.size >= 2) {
-        val best = variantStats.maxByOrNull { it.averagePercent }!!
-        val worst = variantStats.minByOrNull { it.averagePercent }!!
-        ReportsVariantComparisonSummary(
-            bestVariant = best.variant,
-            bestPercent = best.averagePercent,
-            worstVariant = worst.variant,
-            worstPercent = worst.averagePercent,
-            gapPercent = (best.averagePercent - worst.averagePercent).coerceAtLeast(0.0),
-        )
-    } else {
-        null
+@Composable
+private fun FormatTile(title: String, hint: String, active: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    Column(
+        modifier
+            .background(if (active) Scrapbook.Mint else Scrapbook.Paper, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(10.dp),
+    ) {
+        Text(title, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.titleMedium)
+        Text(hint, style = MaterialTheme.typography.bodySmall, color = Scrapbook.InkMuted)
     }
+}
 
-    val classStats = items
-        .filter { !it.journalClassName.isNullOrBlank() }
-        .groupBy { it.journalClassName!!.trim() }
-        .entries
-        .sortedBy { it.key }
-        .map { (cls, works) ->
-            ReportsClassStatsItem(
-                className = cls,
-                worksCount = works.size,
-                averagePercent = works.map { it.percent.toDouble() }.average().takeIf { !it.isNaN() } ?: 0.0,
-                successRatePercent = works.count { it.grade >= 3 } * 100.0 / works.size,
-            )
+@Composable
+private fun CheckLine(text: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable { onChange(!checked) },
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Checkbox(checked = checked, onCheckedChange = onChange)
+        Text(text, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** Бланк ученика из отчёта с листанием «‹ / ›». */
+@Composable
+private fun SheetViewer(
+    row: ReportStudentRow?,
+    position: Int,
+    total: Int,
+    onPrev: () -> Unit,
+    onNext: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    if (row == null) { onDismiss(); return }
+    val bmp by produceState<Bitmap?>(null, row.work.sheetPath) {
+        value = withContext(Dispatchers.IO) { row.work.sheetPath?.let { p -> runCatching { BitmapFactory.decodeFile(p) }.getOrNull() } }
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        SettingsShellCard(modifier = Modifier.fillMaxWidth(0.94f).fillMaxHeight(0.9f)) {
+            Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("${position + 1} из $total · ${row.className}", style = MaterialTheme.typography.labelLarge, color = Scrapbook.InkMuted)
+                Text(row.displayName, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                Text(
+                    "«${row.work.grade}» · ${row.work.scoreCorrect} из ${row.work.scoreTotal} · ${f0(row.work.percent.toDouble())}%" +
+                        (row.work.variant?.let { " · вар. $it" } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    val b = bmp
+                    if (b != null) {
+                        Image(b.asImageBitmap(), contentDescription = "Бланк", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+                    } else {
+                        Text(
+                            if (row.work.sheetPath == null) "Снимок этой работы не сохранился (добавлена в отчёт в прежней версии)." else "Загрузка…",
+                            color = Scrapbook.InkMuted,
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ShellBubblePrimaryButton("‹ Предыдущая", onPrev, Modifier.weight(1f), enabled = position > 0, paletteIndex = 4)
+                    ShellBubblePrimaryButton("Следующая ›", onNext, Modifier.weight(1f), enabled = position < total - 1, paletteIndex = 1)
+                }
+                ShellBubblePrimaryButton("Закрыть", onDismiss, paletteIndex = 5)
+            }
         }
-
-    return ReportsState(
-        summary = summary,
-        gradeDistribution = gradeDistribution,
-        hardestQuestions = hardestQuestions,
-        heatmap = heatmap,
-        relatedErrors = relatedErrors,
-        identicalWorks = identicalWorks,
-        variantStats = variantStats,
-        variantComparison = variantComparison,
-        classStats = classStats,
-        namedWorksCount = namedWorksCount,
-        unnamedWorksCount = unnamedWorksCount,
-        works = workItems.sortedByDescending { (it.percent ?: 0f).roundToInt() },
-    )
+    }
 }

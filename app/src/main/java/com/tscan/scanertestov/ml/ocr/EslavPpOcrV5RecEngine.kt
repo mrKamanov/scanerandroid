@@ -12,6 +12,7 @@ import org.opencv.android.OpenCVLoader
 import org.opencv.core.Mat
 import java.io.File
 import kotlin.math.exp
+import kotlin.math.ln
 
 object EslavPpOcrV5RecEngine {
     private const val TAG = "EslavPpOcrV5Rec"
@@ -90,6 +91,88 @@ object EslavPpOcrV5RecEngine {
                 ctcDecode(indices, probs, table)
             }
         }
+    }
+
+    /**
+     * Вероятности символов по шагам (T × классы) — модель уже отдаёт softmax.
+     * Нужны для чтения только кириллицей и для проверки слов словаря по самой модели.
+     */
+    fun recognizeProbs(matBgr: Mat): Array<FloatArray> {
+        val sess = session ?: error("Eslav OCR не загружен")
+        val inName = inputName ?: error("inputName")
+        val outName = outputName ?: error("outputName")
+        val (flat, imgW) = PaddleRecPreprocessor.floatChwFromBgrMatChinese(matBgr, REC_IMG_H, 320)
+        val tensor = OnnxTensor.createTensor(
+            ortEnv!!,
+            java.nio.FloatBuffer.wrap(flat),
+            longArrayOf(1, 3, REC_IMG_H.toLong(), imgW.toLong()),
+        )
+        return tensor.use { tin ->
+            sess.run(mapOf(inName to tin)).use { r ->
+                @Suppress("UNCHECKED_CAST")
+                ((r.get(outName).get() as OnnxTensor).value as Array<Array<FloatArray>>)[0]
+            }
+        }
+    }
+
+    private val cyrillicMask: BooleanArray by lazy {
+        val letters = "абвгдеёжзийклмнопрстуфхцчшщъыьэюя"
+        BooleanArray(characterTable.size) { i ->
+            val c = characterTable[i]
+            i == 0 || (c.length == 1 && (c[0].lowercaseChar() in letters || c[0] == '-'))
+        }
+    }
+
+    private val charIndex: Map<Char, Int> by lazy {
+        HashMap<Char, Int>().apply {
+            characterTable.forEachIndexed { i, c -> if (i > 0 && c.length == 1 && !containsKey(c[0])) put(c[0], i) }
+        }
+    }
+
+    /** Жадное CTC-чтение, где разрешены только русские буквы и дефис. Возвращает текст и среднюю уверенность. */
+    fun greedyCyrillic(probs: Array<FloatArray>): Pair<String, Float> {
+        val mask = cyrillicMask
+        val sb = StringBuilder()
+        var prev = -1
+        var sum = 0f
+        var n = 0
+        for (row in probs) {
+            var best = 0
+            var bestV = -1f
+            for (j in row.indices) if (j < mask.size && mask[j] && row[j] > bestV) { bestV = row[j]; best = j }
+            if (best != 0 && best != prev) { sb.append(characterTable[best]); sum += bestV; n++ }
+            prev = best
+        }
+        return sb.toString() to (if (n > 0) sum / n else 0f)
+    }
+
+    /** ln P(слово | изображение) по CTC (прямой проход). Очень маленькое число, если символа нет в алфавите модели. */
+    fun ctcLogProb(probs: Array<FloatArray>, word: String): Double {
+        if (word.isEmpty() || probs.isEmpty()) return -1e9
+        val ext = IntArray(word.length * 2 + 1)
+        for ((i, ch) in word.withIndex()) ext[2 * i + 1] = charIndex[ch] ?: return -1e9
+        val l = ext.size
+        val neg = -1e30
+        var a = DoubleArray(l) { neg }
+        fun lp(t: Int, s: Int) = ln(probs[t][ext[s]].toDouble() + 1e-12)
+        a[0] = lp(0, 0)
+        a[1] = lp(0, 1)
+        for (t in 1 until probs.size) {
+            val b = DoubleArray(l)
+            for (s in 0 until l) {
+                var v = a[s]
+                if (s >= 1) v = logAdd(v, a[s - 1])
+                if (s >= 2 && ext[s] != 0 && ext[s] != ext[s - 2]) v = logAdd(v, a[s - 2])
+                b[s] = v + lp(t, s)
+            }
+            a = b
+        }
+        return logAdd(a[l - 1], a[l - 2])
+    }
+
+    private fun logAdd(x: Double, y: Double): Double {
+        val m = maxOf(x, y)
+        return if (m < -1e29) m else m + ln(exp(x - m) + exp(y - m))
     }
 
     private fun buildCharacterTable(context: Context): List<String> {
