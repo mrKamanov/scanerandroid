@@ -68,6 +68,8 @@ fun A4SheetPage(
     modifier: Modifier = Modifier,
     horizontalPadding: Dp = 12.dp,
     verticalPadding: Dp = 8.dp,
+    /** Бланк v2: шапка рисуется кодом печати, старые шестиугольник и поле имени не показываются. */
+    v2: BlankV2Options? = null,
 ) {
     val bubbleLayout = remember(layoutConfig, renderParams) {
         buildBlankBubbleLayout(layoutConfig, renderParams)
@@ -128,9 +130,10 @@ fun A4SheetPage(
                 blankScale = blankScale,
                 isBlankSelected = selection == BlankEditorSelection.Blank,
                 modifier = Modifier.fillMaxSize(),
+                v2 = v2,
             )
 
-            if (showVariantMarker) {
+            if (v2 == null && showVariantMarker) {
                 val marker = computeBlankVariantMarkerRect(
                     layout = bubbleLayout,
                     blankPanLogical = blankPanLogical,
@@ -169,7 +172,7 @@ fun A4SheetPage(
                 }
             }
 
-            if (showStudentNameMarker) {
+            if (v2 == null && showStudentNameMarker) {
                 val marker = computeBlankStudentNameMarkerRect(
                     layout = bubbleLayout,
                     blankPanLogical = blankPanLogical,

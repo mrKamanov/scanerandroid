@@ -4,6 +4,7 @@ package com.tscan.scanertestov.ui.launch
  * Описание: заставка приложения с заголовком «Сканер тестов» и угловой рамкой.
  */
 import androidx.compose.foundation.layout.Box
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -21,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.tscan.scanertestov.ui.scanShellBackdrop
 
-private val ScanCornerColor = Color(0xFF8ADDFE).copy(alpha = 0.7f)
+private val ScanCornerColor = Scrapbook.Ink
 
 @Composable
 fun LaunchScreen(modifier: Modifier = Modifier) {
@@ -54,7 +55,7 @@ fun LaunchScreen(modifier: Modifier = Modifier) {
                 text = "Сканер тестов",
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
-                color = Color(0xFFE8F2FA),
+                color = Scrapbook.Ink,
                 letterSpacing = 0.6.sp,
                 textAlign = TextAlign.Center,
             )

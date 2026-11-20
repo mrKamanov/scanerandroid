@@ -111,12 +111,12 @@ object InstructionUiRefs {
         iconSize = 22.dp,
     )
     val BlankExport = InstructionUiRef.PrimaryCapsule(
-        caption = "Экспорт",
-        buttonText = "Экспорт",
+        caption = "Сохранить тест и печатать",
+        buttonText = "Сохранить тест и печатать",
         paletteIndex = 3,
     )
     val BatchCamera = InstructionUiRef.IconBubble(
-        caption = "Сделать фото",
+        caption = "Камера",
         topColor = Color(0xFF8ADDFE),
         bottomColor = Color(0xFF2EA3F3),
         size = 64.dp,
@@ -140,8 +140,8 @@ object InstructionUiRefs {
         iconSize = 34.dp,
     )
     val ReportsExport = InstructionUiRef.OutlinedCapsule(
-        caption = "Экспорт",
-        buttonText = "Экспорт",
+        caption = "Выгрузить",
+        buttonText = "Выгрузить",
     )
     val FixedAnswered = InstructionUiRef.IconBubble(
         caption = "Отмечено",

@@ -24,6 +24,16 @@ private const val SHEET_WIDTH_PX = 595
 private const val SHEET_HEIGHT_PX = 842
 private const val EMU_PER_PX = 9525L
 
+/**
+ * Во сколько раз картинка (PNG/DOCX) детальнее логического листа 595×842.
+ * Было 1 (≈72 dpi: на печати кольца и текст «мыльные»), стало 4 (≈290 dpi).
+ * Геометрия бланка не меняется — только чёткость. PDF рисуется векторно и от этого не зависит.
+ */
+internal const val EXPORT_RASTER_SCALE = 4f
+
+/** Запас вокруг напечатанного при обрезке PNG «в документ», в логических единицах листа. */
+private const val CROP_MARGIN_LOGICAL = 12f
+
 data class BlankSheetExportSnapshot(
     val layoutConfig: BlankEditorLayoutConfig,
     val renderParams: BlankBubbleRenderParams,
@@ -38,20 +48,36 @@ data class BlankSheetExportSnapshot(
     val studentNameText: String,
     val variantPrintedMode: Boolean,
     val variantPrintedNumber: String,
+    /** Бланк v2 (угловые метки, кружки варианта, код, поле имени) или null — старый формат (совместимость). */
+    val v2: BlankV2Options? = null,
 )
 
+/**
+ * Картинка листа. [scale] — детальность относительно логического листа 595×842.
+ * Для пакета по классу картинки делаются и сохраняются по одной (см. save*Streaming), чтобы не держать
+ * в памяти десятки больших листов.
+ */
 fun renderBlankSheetBitmap(
     snapshot: BlankSheetExportSnapshot,
     withBackground: Boolean,
+    scale: Float = EXPORT_RASTER_SCALE,
 ): Bitmap {
-    val bitmap = Bitmap.createBitmap(SHEET_WIDTH_PX, SHEET_HEIGHT_PX, Bitmap.Config.ARGB_8888)
+    val w = (SHEET_WIDTH_PX * scale).toInt()
+    val h = (SHEET_HEIGHT_PX * scale).toInt()
+    val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap)
-    if (withBackground) {
-        canvas.drawColor(Color.WHITE)
-    } else {
-        canvas.drawColor(Color.TRANSPARENT)
-    }
+    canvas.drawColor(if (withBackground) Color.WHITE else Color.TRANSPARENT)
+    canvas.scale(scale, scale)
+    drawBlankSheet(canvas, snapshot, withBackground)
+    return bitmap
+}
 
+/** Рисует весь лист в логических координатах 595×842 на любой холст (картинка или страница PDF). */
+internal fun drawBlankSheet(
+    canvas: Canvas,
+    snapshot: BlankSheetExportSnapshot,
+    withBackground: Boolean,
+) {
     val layout = buildBlankBubbleLayout(snapshot.layoutConfig, snapshot.renderParams)
     val frameFill = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         style = Paint.Style.FILL
@@ -111,7 +137,8 @@ fun renderBlankSheetBitmap(
         strokeWidth = maxOf(layout.renderParams.borderWidthPx * 1.45f, 3f)
         color = Color.BLACK
     }
-    drawBlankBubbleLayoutCornerMarksOnCanvas(canvas, layout, cornerMarkStroke)
+    // Старые уголки у рамки — только у старого формата: у бланка v2 их место заняли метки ArUco.
+    if (snapshot.v2 == null) drawBlankBubbleLayoutCornerMarksOnCanvas(canvas, layout, cornerMarkStroke)
 
     val bubbleRadius = layout.renderParams.bubbleSizePx / 2f
     for (bubble in layout.bubbles) {
@@ -127,9 +154,13 @@ fun renderBlankSheetBitmap(
             canvas.drawText(label, bubble.centerX, baseline, textPaint)
         }
     }
+    snapshot.v2?.let { v2 ->
+        val b = blankBubbleLayoutBoundingRect(layout)
+        BlankV2Print.draw(canvas, b.left, b.top, b.right - b.left, b.bottom - b.top, v2, withBackground)
+    }
     canvas.restore()
 
-    if (snapshot.showVariantMarker) {
+    if (snapshot.v2 == null && snapshot.showVariantMarker) {
         val marker = computeBlankVariantMarkerRect(
             layout = layout,
             blankPanLogical = snapshot.blankPanLogical,
@@ -171,7 +202,7 @@ fun renderBlankSheetBitmap(
         }
     }
 
-    if (snapshot.showStudentNameMarker) {
+    if (snapshot.v2 == null && snapshot.showStudentNameMarker) {
         val marker = computeBlankStudentNameMarkerRect(
             layout = layout,
             blankPanLogical = snapshot.blankPanLogical,
@@ -226,7 +257,44 @@ fun renderBlankSheetBitmap(
         canvas.drawText(block.text, 0f, baseline, blockTextPaint)
         canvas.restore()
     }
-    return bitmap
+}
+
+/**
+ * Обрезает пустое поле листа вокруг всего напечатанного (рамка, метки, поле имени, надписи) с запасом.
+ * Ищет непрозрачные пиксели, поэтому годится для картинки без фона. Если ничего не найдено — возвращает исходную.
+ */
+internal fun cropToContent(bitmap: Bitmap, scale: Float = EXPORT_RASTER_SCALE): Bitmap {
+    val w = bitmap.width
+    val h = bitmap.height
+    val row = IntArray(w)
+    var top = -1
+    var bottom = -1
+    var left = w
+    var right = -1
+    for (y in 0 until h) {
+        bitmap.getPixels(row, 0, w, 0, y, w, 1)
+        var rowLeft = -1
+        var rowRight = -1
+        for (x in 0 until w) {
+            if ((row[x] ushr 24) > 8) {
+                if (rowLeft < 0) rowLeft = x
+                rowRight = x
+            }
+        }
+        if (rowLeft >= 0) {
+            if (top < 0) top = y
+            bottom = y
+            if (rowLeft < left) left = rowLeft
+            if (rowRight > right) right = rowRight
+        }
+    }
+    if (top < 0 || right < 0) return bitmap
+    val m = (CROP_MARGIN_LOGICAL * scale).toInt()
+    val x0 = (left - m).coerceAtLeast(0)
+    val y0 = (top - m).coerceAtLeast(0)
+    val x1 = (right + m).coerceAtMost(w - 1)
+    val y1 = (bottom + m).coerceAtMost(h - 1)
+    return Bitmap.createBitmap(bitmap, x0, y0, x1 - x0 + 1, y1 - y0 + 1)
 }
 
 fun saveBlankSheetPng(
@@ -236,18 +304,53 @@ fun saveBlankSheetPng(
 ): File {
     val suffix = if (withBackground) "with-bg" else "no-bg"
     val output = buildExportFile(context, "blank-$suffix", "png")
-    FileOutputStream(output).use { out ->
-        bitmap.compress(Bitmap.CompressFormat.PNG, 100, out)
-        out.flush()
+    // Без фона — это «вставить в свой документ»: убираем пустое поле листа, бланк и метки целы.
+    val toSave = if (withBackground) bitmap else cropToContent(bitmap)
+    try {
+        FileOutputStream(output).use { out ->
+            toSave.compress(Bitmap.CompressFormat.PNG, 100, out)
+            out.flush()
+        }
+    } finally {
+        if (toSave !== bitmap) toSave.recycle()
     }
     return output
 }
 
+/** PDF рисуется линиями (вектор): идеальная чёткость на любом принтере и маленький файл. */
 fun saveBlankSheetPdf(
     context: Context,
-    bitmap: Bitmap,
+    snapshot: BlankSheetExportSnapshot,
 ): File {
-    return saveBlankSheetPdfMultiPage(context, listOf(bitmap), filePrefix = "blank")
+    return saveBlankSheetsPdfVector(context, listOf(snapshot), filePrefix = "blank")
+}
+
+fun saveBlankSheetsPdfVector(
+    context: Context,
+    snapshots: List<BlankSheetExportSnapshot>,
+    filePrefix: String = "blank-batch",
+): File {
+    require(snapshots.isNotEmpty())
+    val output = buildExportFile(context, filePrefix, "pdf")
+    val pdf = android.graphics.pdf.PdfDocument()
+    try {
+        snapshots.forEachIndexed { index, snap ->
+            val pageInfo = android.graphics.pdf.PdfDocument.PageInfo
+                .Builder(SHEET_WIDTH_PX, SHEET_HEIGHT_PX, index + 1)
+                .create()
+            val page = pdf.startPage(pageInfo)
+            page.canvas.drawColor(Color.WHITE)
+            drawBlankSheet(page.canvas, snap, withBackground = true)
+            pdf.finishPage(page)
+        }
+        FileOutputStream(output).use { out ->
+            pdf.writeTo(out)
+            out.flush()
+        }
+    } finally {
+        pdf.close()
+    }
+    return output
 }
 
 fun saveBlankSheetPdfMultiPage(
@@ -287,8 +390,8 @@ fun saveBlankSheetDocx(
         bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
         baos.toByteArray()
     }
-    val cx = bitmap.width.toLong() * EMU_PER_PX
-    val cy = bitmap.height.toLong() * EMU_PER_PX
+    val cx = SHEET_WIDTH_PX.toLong() * EMU_PER_PX
+    val cy = SHEET_HEIGHT_PX.toLong() * EMU_PER_PX
     ZipOutputStream(FileOutputStream(output)).use { zip ->
         putTextEntry(
             zip,
@@ -346,10 +449,8 @@ fun saveBlankSheetDocxMultiPage(
             baos.toByteArray()
         }
     }
-    val w = pages.first().width
-    val h = pages.first().height
-    val cx = w.toLong() * EMU_PER_PX
-    val cy = h.toLong() * EMU_PER_PX
+    val cx = SHEET_WIDTH_PX.toLong() * EMU_PER_PX
+    val cy = SHEET_HEIGHT_PX.toLong() * EMU_PER_PX
     val n = pages.size
     ZipOutputStream(FileOutputStream(output)).use { zip ->
         putTextEntry(
@@ -392,21 +493,27 @@ fun saveBlankSheetDocxMultiPage(
     return output
 }
 
+/** Пакет DOCX по классу: каждый лист рисуется, сохраняется и сразу освобождается. */
 fun saveBlankSheetsDocxSeparate(
     context: Context,
-    entries: List<Pair<String, Bitmap>>,
+    entries: List<Pair<String, BlankSheetExportSnapshot>>,
     filePrefix: String = "blank-docx",
 ): List<File> {
     require(entries.isNotEmpty())
-    return entries.mapIndexed { index, (baseName, bitmap) ->
+    return entries.mapIndexed { index, (baseName, snap) ->
         val safe = sanitizeExportEntryBaseName(baseName).ifBlank { "blank-${index + 1}" }
         val out = buildExportFile(context, "$filePrefix-$safe", "docx")
-        val pngBytes = ByteArrayOutputStream().use { baos ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
-            baos.toByteArray()
+        val bitmap = renderBlankSheetBitmap(snap, withBackground = true)
+        val pngBytes = try {
+            ByteArrayOutputStream().use { baos ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
+                baos.toByteArray()
+            }
+        } finally {
+            bitmap.recycle()
         }
-        val cx = bitmap.width.toLong() * EMU_PER_PX
-        val cy = bitmap.height.toLong() * EMU_PER_PX
+        val cx = SHEET_WIDTH_PX.toLong() * EMU_PER_PX
+        val cy = SHEET_HEIGHT_PX.toLong() * EMU_PER_PX
         ZipOutputStream(FileOutputStream(out)).use { zip ->
             putTextEntry(
                 zip,
@@ -452,9 +559,18 @@ fun saveBlankSheetsDocxSeparate(
     }
 }
 
+/** Рисует лист для PNG-пакета; без фона — сразу обрезает по содержимому. Вызывающий освобождает результат. */
+private fun renderPngForExport(snap: BlankSheetExportSnapshot, withBackground: Boolean): Bitmap {
+    val full = renderBlankSheetBitmap(snap, withBackground)
+    if (withBackground) return full
+    val cropped = cropToContent(full)
+    if (cropped !== full) full.recycle()
+    return cropped
+}
+
 fun saveBlankSheetsPngZip(
     context: Context,
-    entries: List<Pair<String, Bitmap>>,
+    entries: List<Pair<String, BlankSheetExportSnapshot>>,
     withBackground: Boolean,
     filePrefix: String = "blank-png-batch",
 ): File {
@@ -462,12 +578,14 @@ fun saveBlankSheetsPngZip(
     val suffix = if (withBackground) "bg" else "nobg"
     val output = buildExportFile(context, "$filePrefix-$suffix", "zip")
     ZipOutputStream(FileOutputStream(output)).use { zip ->
-        for ((baseName, bitmap) in entries) {
+        for ((baseName, snap) in entries) {
             val safe = sanitizeExportEntryBaseName(baseName).ifBlank { "blank" }
             zip.putNextEntry(ZipEntry("$safe.png"))
-            ByteArrayOutputStream().use { baos ->
-                bitmap.compress(Bitmap.CompressFormat.PNG, 100, baos)
-                zip.write(baos.toByteArray())
+            val bitmap = renderPngForExport(snap, withBackground)
+            try {
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, zip)
+            } finally {
+                bitmap.recycle()
             }
             zip.closeEntry()
         }
@@ -477,18 +595,23 @@ fun saveBlankSheetsPngZip(
 
 fun saveBlankSheetsPngSeparate(
     context: Context,
-    entries: List<Pair<String, Bitmap>>,
+    entries: List<Pair<String, BlankSheetExportSnapshot>>,
     withBackground: Boolean,
     filePrefix: String = "blank-png",
 ): List<File> {
     require(entries.isNotEmpty())
     val suffix = if (withBackground) "bg" else "nobg"
-    return entries.mapIndexed { index, (baseName, bitmap) ->
+    return entries.mapIndexed { index, (baseName, snap) ->
         val safe = sanitizeExportEntryBaseName(baseName).ifBlank { "blank-${index + 1}" }
         val out = buildExportFile(context, "$filePrefix-$suffix-$safe", "png")
-        FileOutputStream(out).use { fos ->
-            bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
-            fos.flush()
+        val bitmap = renderPngForExport(snap, withBackground)
+        try {
+            FileOutputStream(out).use { fos ->
+                bitmap.compress(Bitmap.CompressFormat.PNG, 100, fos)
+                fos.flush()
+            }
+        } finally {
+            bitmap.recycle()
         }
         out
     }

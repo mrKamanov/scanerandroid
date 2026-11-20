@@ -4,6 +4,7 @@ package com.tscan.scanertestov.feature.batch.components
  * Описание: карточки предпросмотра работы — детальная карточка, смена варианта и рендер превью изображения.
  */
 import android.net.Uri
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -226,7 +227,7 @@ private fun AssignVariantPanel(
                 Icon(
                     imageVector = Icons.Filled.Tune,
                     contentDescription = null,
-                    tint = Color.White,
+                    tint = Scrapbook.Ink,
                     modifier = Modifier.size(24.dp),
                 )
             }
@@ -245,7 +246,7 @@ private fun AssignVariantPanel(
                     },
                     fillMaxWidth = true,
                 )
-                HorizontalDivider(color = Color.White.copy(alpha = 0.14f))
+                HorizontalDivider(color = Scrapbook.Ink.copy(alpha = 0.14f))
                 for (v in 1..maxVariantInclusive) {
                     ShellBubbleOutlinedButton(
                         text = "В$v",
@@ -440,7 +441,7 @@ private fun BatchWorkFullScreenZoomDialog(
                         Icon(
                             imageVector = Icons.Filled.RestartAlt,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = Scrapbook.Ink,
                             modifier = Modifier.size(26.dp),
                         )
                     }
@@ -457,7 +458,7 @@ private fun BatchWorkFullScreenZoomDialog(
                         Icon(
                             imageVector = Icons.Filled.Close,
                             contentDescription = null,
-                            tint = Color.White,
+                            tint = Scrapbook.Ink,
                             modifier = Modifier.size(26.dp),
                         )
                     }

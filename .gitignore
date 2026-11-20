@@ -36,3 +36,28 @@ app/src/main/assets/models/**/*.onnx
 app/src/main/assets/models/**/*.tflite
 !app/src/main/assets/models/README.md
 !app/src/main/assets/models/**/dict.txt
+
+# Рабочие заметки (только локально)
+CLAUDE.md
+WORKLOG.md
+.claude/
+
+# Обучение нейросети, снимки, замеры, наборы данных (только локально)
+claude/
+olddataset/
+images/
+
+# Архив старых файлов
+_архив/
+
+# Готовые материалы для RuStore: APK, видео, скриншоты (тексты и скрипты — в репозитории)
+store/**/*.apk
+store/**/*.mp4
+store/rustore/screens/
+*.apk
+*.aab
+
+# Пробные бланки, патчи и архивы в корне
+/*.docx
+/*.patch
+/*.zip

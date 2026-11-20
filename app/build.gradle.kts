@@ -21,10 +21,16 @@ android {
         applicationId = "com.tscan.scanertestov"
         minSdk = 26
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0"
+        versionCode = 3
+        versionName = "0.3.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // Только ARM: x86/x86_64 нужны лишь эмулятору, а добавляли ~95 МБ библиотек OpenCV в APK.
+        // Для запуска на эмуляторе временно добавьте "x86_64" в список.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {
@@ -86,12 +92,14 @@ dependencies {
     implementation(libs.google.material)
     implementation(project(":sdk"))
     implementation("com.microsoft.onnxruntime:onnxruntime-android:1.16.3")
-    implementation("com.google.mediapipe:tasks-vision:latest.release")
-    implementation("org.tensorflow:tensorflow-lite:latest.release")
 
     // Apache POI — экспорт отчётов в Excel (как в external/TscanAndroid)
     implementation("org.apache.poi:poi:5.2.3")
     implementation("org.apache.poi:poi-ooxml:5.2.3")
+
+    testImplementation("junit:junit:4.13.2")
+    // В локальных unit-тестах org.json из android.jar — заглушка; нужна настоящая реализация.
+    testImplementation("org.json:json:20240303")
 
     debugImplementation(libs.androidx.compose.ui.tooling)
     debugImplementation(libs.androidx.compose.ui.test.manifest)

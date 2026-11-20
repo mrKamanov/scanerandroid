@@ -8,6 +8,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 class BatchCriteriaRepository(context: Context) {
+    private val appContext = context.applicationContext
     private val prefs = context.getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
 
     fun getAll(): List<BatchCriteriaPreset> {
@@ -42,6 +43,8 @@ class BatchCriteriaRepository(context: Context) {
                 columnCount = obj.optInt("columnCount", 1).coerceIn(1, 2),
                 correctAnswers = answers,
                 variantAnswerKeys = readVariantAnswerKeys(obj),
+                gradingCriteriaJson = if (obj.has("grading") && !obj.isNull("grading")) obj.optString("grading") else null,
+                blankDesignJson = if (obj.has("blank") && !obj.isNull("blank")) obj.optString("blank") else null,
             )
         }
         return out
@@ -76,6 +79,8 @@ class BatchCriteriaRepository(context: Context) {
                         variants.put(vObj)
                     }
                 put("variantAnswerKeys", variants)
+                preset.gradingCriteriaJson?.let { put("grading", it) }
+                preset.blankDesignJson?.let { put("blank", it) }
             }
             arr.put(obj)
         }
@@ -89,6 +94,8 @@ class BatchCriteriaRepository(context: Context) {
 
     fun delete(id: String) {
         saveAll(getAll().filterNot { it.id == id })
+        // Выданные по тесту номера учеников (коды на именных бланках) больше не нужны.
+        com.tscan.scanertestov.feature.tests.StudentCodeStore.deleteTest(appContext, id)
     }
 
     fun getById(id: String): BatchCriteriaPreset? = getAll().firstOrNull { it.id == id }

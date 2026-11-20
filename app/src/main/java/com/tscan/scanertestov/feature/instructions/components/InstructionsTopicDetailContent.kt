@@ -4,6 +4,7 @@ package com.tscan.scanertestov.feature.instructions.components
  * Описание: разметка текста одного раздела инструкции (шаги, советы, образцы кнопок).
  */
 import androidx.compose.foundation.background
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -42,12 +43,12 @@ internal fun InstructionsTopicDetailContent(
                     text = topic.title,
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color(0xFFE8F4FC),
+                    color = Scrapbook.Ink,
                 )
                 Text(
                     text = topic.subtitle,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFFB8D4E8),
+                    color = Scrapbook.InkMuted,
                 )
             }
         }
@@ -65,15 +66,26 @@ private fun InstructionSectionBlock(section: InstructionSection) {
                 text = section.title,
                 style = MaterialTheme.typography.titleSmall,
                 fontWeight = FontWeight.SemiBold,
-                color = Color(0xFFFFE08A),
+                color = Scrapbook.AccentInk,
             )
             section.lead?.let { lead ->
                 Text(
                     text = lead,
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Color(0xFFE8F4FC),
+                    color = Scrapbook.Ink,
                 )
             }
+            section.animations.forEach { anim ->
+                FillingAnimation(
+                    kind = anim,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(Scrapbook.Paper)
+                        .border(1.dp, Scrapbook.Ink.copy(alpha = 0.12f), RoundedCornerShape(10.dp))
+                        .padding(8.dp),
+                )
+            }
+            section.pictures.forEach { InstructionPictureCard(it) }
             section.steps.forEachIndexed { index, step ->
                 InstructionStepRow(stepIndex = index + 1, step = step)
             }
@@ -81,18 +93,18 @@ private fun InstructionSectionBlock(section: InstructionSection) {
                 InstructionCallout(
                     label = "Совет",
                     text = tip,
-                    background = Color(0xFF1A4A3A).copy(alpha = 0.55f),
-                    border = Color(0xFF4CAF7A).copy(alpha = 0.45f),
-                    labelColor = Color(0xFF8FE8B0),
+                    background = Scrapbook.Mint,
+                    border = Scrapbook.Ink,
+                    labelColor = Scrapbook.Ink,
                 )
             }
             section.examples.forEach { example ->
                 InstructionCallout(
                     label = "Пример",
                     text = example,
-                    background = Color(0xFF2A3548).copy(alpha = 0.55f),
-                    border = Color(0xFF5EC4FF).copy(alpha = 0.35f),
-                    labelColor = Color(0xFF9AD4FF),
+                    background = Scrapbook.Sky,
+                    border = Scrapbook.Sky.copy(alpha = 0.35f),
+                    labelColor = Scrapbook.Ink,
                 )
             }
         }
@@ -113,7 +125,7 @@ private fun InstructionStepRow(
             modifier = Modifier
                 .size(28.dp)
                 .clip(CircleShape)
-                .background(Color(0xFF2EA3F3)),
+                .background(Scrapbook.Lemon),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center,
         ) {
@@ -121,7 +133,7 @@ private fun InstructionStepRow(
                 text = stepIndex.toString(),
                 style = MaterialTheme.typography.labelMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = Scrapbook.Ink,
             )
         }
         Column(
@@ -132,12 +144,12 @@ private fun InstructionStepRow(
                 text = step.title,
                 style = MaterialTheme.typography.bodyLarge,
                 fontWeight = FontWeight.Medium,
-                color = Color(0xFFE8F4FC),
+                color = Scrapbook.Ink,
             )
             Text(
                 text = step.body,
                 style = MaterialTheme.typography.bodyMedium,
-                color = Color(0xFFB8D4E8),
+                color = Scrapbook.InkMuted,
             )
             if (step.buttonHints.isNotEmpty()) {
                 Column(
@@ -179,7 +191,7 @@ private fun InstructionCallout(
         Text(
             text = text,
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFFE8F4FC),
+            color = Scrapbook.Ink,
         )
     }
 }

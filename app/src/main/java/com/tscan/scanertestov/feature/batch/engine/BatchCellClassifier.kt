@@ -17,11 +17,12 @@ internal object BatchCellClassifier {
     ): List<BatchCellPrediction> {
         if (cells.isEmpty()) return emptyList()
         val mats = cells.map { it.third }
-        val ml = BatchCellMlClassifier.classifyBatch(mats, context)
+        val probs = ArrayList<FloatArray>()
+        val ml = BatchCellMlClassifier.classifyBatch(mats, context, probs)
         return cells.mapIndexed { i, (q, c, mat) ->
             val mlPair = ml?.getOrNull(i)
             val (klass, conf) = mlPair ?: BatchCellHeuristicClassifier.classify(mat)
-            BatchCellPrediction(q, c, klass, conf)
+            BatchCellPrediction(q, c, klass, conf, probs = if (mlPair != null && probs.size == cells.size) probs[i] else null)
         }
     }
 }

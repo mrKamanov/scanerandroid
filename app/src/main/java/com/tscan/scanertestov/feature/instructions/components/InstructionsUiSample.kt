@@ -4,6 +4,7 @@ package com.tscan.scanertestov.feature.instructions.components
  * Описание: отрисовка образца кнопки/элемента UI в тексте инструкции (те же компоненты, что на экранах приложения).
  */
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -50,7 +51,7 @@ internal fun InstructionsUiSample(
                     Icon(
                         imageVector = ref.icon,
                         contentDescription = null,
-                        tint = Color.White,
+                        tint = Scrapbook.Ink,
                         modifier = Modifier.size(ref.iconSize),
                     )
                 }
@@ -77,7 +78,7 @@ internal fun InstructionsUiSample(
             Text(
                 text = ref.caption,
                 style = MaterialTheme.typography.labelSmall,
-                color = Color(0xFFB8D4E8),
+                color = Scrapbook.InkMuted,
             )
         }
     }

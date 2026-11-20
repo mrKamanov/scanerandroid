@@ -12,7 +12,8 @@ fun handleMainMenuAction(navController: NavHostController, action: MainMenuActio
         MainMenuAction.OpenBatchProcessing -> navController.navigate(AppDestinations.BATCH_PROCESSING)
         MainMenuAction.OpenJournals -> navController.navigate(AppDestinations.JOURNALS)
         MainMenuAction.OpenReports -> navController.navigate(AppDestinations.REPORTS)
-        MainMenuAction.OpenBlankEditor -> navController.navigate(AppDestinations.BLANK_EDITOR)
+        // «Тесты»: список тестов; бланк теста и шаблоны открываются оттуда.
+        MainMenuAction.OpenBlankEditor -> navController.navigate(AppDestinations.TESTS)
         MainMenuAction.OpenInstructions -> navController.navigate(AppDestinations.INSTRUCTIONS)
         MainMenuAction.OpenSettings -> navController.navigate(AppDestinations.SETTINGS)
     }

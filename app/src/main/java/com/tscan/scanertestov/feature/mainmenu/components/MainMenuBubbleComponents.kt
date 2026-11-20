@@ -4,6 +4,7 @@ package com.tscan.scanertestov.feature.mainmenu.components
  * Описание: карточки и заголовок главного меню в стиле «пузырьков».
  */
 import androidx.compose.animation.core.FastOutSlowInEasing
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -56,21 +57,22 @@ import kotlin.math.cos
 import kotlin.math.sin
 import kotlin.math.sqrt
 
-private val MenuTitleColor = Color(0xFFE8F2FA)
-private val MenuMutedColor = Color(0xFFB0C4D6)
+private val MenuTitleColor = Scrapbook.Ink
+private val MenuMutedColor = Scrapbook.InkMuted
 
 internal fun mainMenuBubbleGradient(index: Int): Pair<Color, Color> {
-    val k = ((index % 7) + 7) % 7
-    return when (k) {
-        0 -> Color(0xFF8ADDFE) to Color(0xFF2EA3F3)
-        1 -> Color(0xFF7BE2BB) to Color(0xFF2BB98A)
-        2 -> Color(0xFFAE9EFF) to Color(0xFF6D58EA)
-        3 -> Color(0xFFFFD47F) to Color(0xFFF5A93E)
-        4 -> Color(0xFFA8B3C7) to Color(0xFF73829A)
-        5 -> Color(0xFFFFB4C0) to Color(0xFFD94D6A)
-        6 -> Color(0xFFB8CEFF) to Color(0xFF3D56C6)
-        else -> Color(0xFFA8B3C7) to Color(0xFF73829A)
+    // Стиль «Скрапбук»: плоские пастельные «бумажки» вместо глянцевых градиентов.
+    val c = when (((index % 8) + 8) % 8) {
+        0 -> Color(0xFFD9F2FF) // голубая
+        1 -> Color(0xFFA8E6CF) // мятная
+        2 -> Color(0xFFC7CEFF) // лавандовая
+        3 -> Color(0xFFFFF3A0) // лимонная
+        4 -> Color(0xFFFFFFFF) // белая
+        5 -> Color(0xFFFFB7C5) // розовая
+        6 -> Color(0xFFFFD3B6) // персиковая
+        else -> Color(0xFFF3EEE3)
     }
+    return c to c
 }
 
 @Composable
@@ -82,7 +84,7 @@ private fun MainMenuTitleVariant16Orb(modifier: Modifier = Modifier) {
         modifier = modifier
             .size(36.dp)
             .clip(CircleShape)
-            .border(width = 2.dp, color = Color.White.copy(alpha = 0.22f), shape = CircleShape),
+            .border(width = 2.dp, color = Scrapbook.Ink.copy(alpha = 0.22f), shape = CircleShape),
     ) {
         val cx = size.width / 2f
         val cy = size.height / 2f

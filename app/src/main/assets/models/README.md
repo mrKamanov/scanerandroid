@@ -4,24 +4,13 @@
 
 ## OMR (ячейки ответов)
 
-Источник: [TscanSDK_IIMODELS/omr_models](https://github.com/mrKamanov/TscanSDK_IIMODELS/tree/master/omr_models)
+Приложение использует **одну** модель: `models/128x128_model/best_128x128_model.onnx` — MobileNetV2, вход 128×128,
+классы «пусто / закрашен / исправлен», **дообученная** на вырезках бланков приложения (скрипт
+`claude/train/finetune_128.py`, результат — `claude/train/out/`). Прежние 64×64 и 256×256 убраны (на фото работали хуже,
+выбора модели в настройках больше нет).
 
-| Путь в `assets/` | Файл в репозитории моделей |
-|------------------|----------------------------|
-| `models/64x64_model/best_medium_model.onnx` | `omr_models/64x64_model/best_medium_model.onnx` |
-| `models/128x128_model/best_128x128_model.onnx` | `omr_models/128x128_model/best_128x128_model.onnx` |
-| `models/256x256_model/best_256x256_model.onnx` | `omr_models/256x256_model/best_256x256_model.onnx` |
-
-Скачать одной командой (PowerShell, из корня проекта):
-
-```powershell
-$base = "https://raw.githubusercontent.com/mrKamanov/TscanSDK_IIMODELS/master/omr_models"
-$dest = "app/src/main/assets/models"
-New-Item -ItemType Directory -Force -Path "$dest/64x64_model","$dest/128x128_model","$dest/256x256_model" | Out-Null
-Invoke-WebRequest "$base/64x64_model/best_medium_model.onnx" -OutFile "$dest/64x64_model/best_medium_model.onnx"
-Invoke-WebRequest "$base/128x128_model/best_128x128_model.onnx" -OutFile "$dest/128x128_model/best_128x128_model.onnx"
-Invoke-WebRequest "$base/256x256_model/best_256x256_model.onnx" -OutFile "$dest/256x256_model/best_256x256_model.onnx"
-```
+Исходная (до дообучения) модель — [TscanSDK_IIMODELS/omr_models/128x128_model](https://github.com/mrKamanov/TscanSDK_IIMODELS/tree/master/omr_models);
+её копия — `claude/train/orig/`. Для сборки нужна именно дообученная — положите её из `claude/train/out/`.
 
 ## OCR (имена / цифры)
 

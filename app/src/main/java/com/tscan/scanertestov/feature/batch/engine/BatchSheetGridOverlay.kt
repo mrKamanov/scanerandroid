@@ -9,6 +9,46 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
 internal object BatchSheetGridOverlay {
+    fun canonToBitmap(canonBgr: org.opencv.core.Mat): Bitmap {
+        val rgba = org.opencv.core.Mat()
+        org.opencv.imgproc.Imgproc.cvtColor(canonBgr, rgba, org.opencv.imgproc.Imgproc.COLOR_BGR2RGBA)
+        val out = Bitmap.createBitmap(rgba.cols(), rgba.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(rgba, out)
+        rgba.release()
+        return out
+    }
+
+    /** Выпрямленная сетка с отметками распознавания: зелёный — отмечено, оранжевый — исправлено. */
+    fun renderPredictions(
+        canonBgr: org.opencv.core.Mat,
+        geometry: GridGeometry,
+        predictions: List<BatchCellPrediction>,
+        scale: Double,
+    ): Bitmap {
+        val rgba = org.opencv.core.Mat()
+        org.opencv.imgproc.Imgproc.cvtColor(canonBgr, rgba, org.opencv.imgproc.Imgproc.COLOR_BGR2RGBA)
+        val out = Bitmap.createBitmap(rgba.cols(), rgba.rows(), Bitmap.Config.ARGB_8888)
+        org.opencv.android.Utils.matToBitmap(rgba, out)
+        rgba.release()
+        val canvas = Canvas(out)
+        val yes = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(230, 46, 160, 67); style = Paint.Style.STROKE; strokeWidth = 7f }
+        val fixed = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(230, 245, 124, 0); style = Paint.Style.STROKE; strokeWidth = 7f }
+        val no = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = Color.argb(90, 120, 120, 120); style = Paint.Style.STROKE; strokeWidth = 2f }
+        val byCell = predictions.associateBy { it.questionIndex to it.choiceIndex }
+        val r = (geometry.bubbleSize / 2f + 3f) * scale.toFloat()
+        for (b in geometry.bubbles) {
+            if (b.placeholder) continue
+            val p = byCell[b.question to b.choice] ?: continue
+            val paint = when (p.klass) {
+                BatchCellClass.Yes -> yes
+                BatchCellClass.Fixed -> fixed
+                BatchCellClass.No -> no
+            }
+            canvas.drawCircle(b.cx * scale.toFloat(), b.cy * scale.toFloat(), r, paint)
+        }
+        return out
+    }
+
     fun renderOverlay(
         source: Bitmap,
         questionsCount: Int,

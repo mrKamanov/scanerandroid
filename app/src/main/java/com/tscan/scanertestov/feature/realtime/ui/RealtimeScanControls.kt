@@ -291,17 +291,21 @@ internal fun RealtimeScanActionButtons(
         horizontalArrangement = Arrangement.spacedBy(14.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RealtimeFreezeFrameButton(
-            contourReady = contourReady,
-            isPaused = isPaused,
-            isProcessing = isProcessing,
-            onClick = onFreezeClick,
-        )
-        RealtimeRunCheckButton(
-            enabled = canRunCheck,
-            isProcessing = isProcessing,
-            onClick = onRunCheckClick,
-        )
+        CaptionedButton(if (isPaused) "Переснять" else "Стоп-кадр") {
+            RealtimeFreezeFrameButton(
+                contourReady = contourReady,
+                isPaused = isPaused,
+                isProcessing = isProcessing,
+                onClick = onFreezeClick,
+            )
+        }
+        CaptionedButton("Проверить") {
+            RealtimeRunCheckButton(
+                enabled = canRunCheck,
+                isProcessing = isProcessing,
+                onClick = onRunCheckClick,
+            )
+        }
     }
 }
 
@@ -388,15 +392,15 @@ internal fun RealtimeScanBottomBar(
         horizontalArrangement = Arrangement.SpaceEvenly,
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RoundToolButton(
+        CaptionedButton("Ответы") { RoundToolButton(
             onClick = onUpdateAnswers,
             contentDescription = "Обновить эталон",
             topColor = Color(0xFF8ADDFE),
             bottomColor = Color(0xFF2EA3F3),
         ) {
             Icon(Icons.Default.Sync, contentDescription = null, modifier = Modifier.size(28.dp))
-        }
-        RoundToolButton(
+        } }
+        CaptionedButton("Сетка") { RoundToolButton(
             onClick = onOpenGridEtalon,
             contentDescription = "Сетка эталона на кадре",
             topColor = if (gridVisible) Color(0xFFAE9EFF) else Color(0xFFA8B3C7),
@@ -407,15 +411,15 @@ internal fun RealtimeScanBottomBar(
                 contentDescription = null,
                 modifier = Modifier.size(28.dp),
             )
-        }
-        RoundToolButton(
+        } }
+        CaptionedButton("Камера") { RoundToolButton(
             onClick = onCameraSettings,
             contentDescription = "Настройки камеры",
             topColor = Color(0xFFA8B3C7),
             bottomColor = Color(0xFF73829A),
         ) {
             Icon(Icons.Default.Tune, contentDescription = null, modifier = Modifier.size(28.dp))
-        }
+        } }
     }
 }
 
@@ -439,5 +443,27 @@ private fun RoundToolButton(
         modifier = modifier,
     ) {
         content()
+    }
+}
+
+/** Кнопка с подписью снизу: одни иконки на экране камеры были непонятны. */
+@Composable
+private fun CaptionedButton(
+    caption: String,
+    modifier: Modifier = Modifier,
+    button: @Composable () -> Unit,
+) {
+    Column(
+        modifier = modifier,
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        button()
+        Text(
+            text = caption,
+            style = MaterialTheme.typography.labelSmall,
+            color = Color.White.copy(alpha = 0.9f),
+            maxLines = 1,
+        )
     }
 }

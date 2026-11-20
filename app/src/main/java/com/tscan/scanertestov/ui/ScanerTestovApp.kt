@@ -35,8 +35,6 @@ import com.tscan.scanertestov.feature.batch.BatchDocumentCameraRoute
 import com.tscan.scanertestov.feature.batch.BatchProcessingRoute
 import com.tscan.scanertestov.feature.batch.BatchRecognitionWarmup
 import com.tscan.scanertestov.feature.batch.BatchResultsRoute
-import com.tscan.scanertestov.feature.blankeditor.BlankEditorScreen
-import com.tscan.scanertestov.feature.blankeditor.handleBlankEditorAction
 import com.tscan.scanertestov.feature.instructions.InstructionsScreen
 import com.tscan.scanertestov.feature.instructions.handleInstructionsAction
 import com.tscan.scanertestov.feature.journals.JournalsScreen
@@ -62,9 +60,6 @@ fun ScanerTestovApp() {
     val activityContext = LocalContext.current
     val appContext = activityContext.applicationContext
     var isQuickAccessBarEnabled by rememberSaveable { mutableStateOf(false) }
-    var inferenceModel by remember {
-        mutableStateOf(AppSettingsStore.getInferenceModel(appContext))
-    }
     var gradingCriteria by remember {
         mutableStateOf(AppSettingsStore.getGradingCriteria(appContext))
     }
@@ -97,7 +92,6 @@ fun ScanerTestovApp() {
             bottomBar = {
                 if (
                     isQuickAccessBarEnabled &&
-                    currentRoute != AppDestinations.BLANK_EDITOR &&
                     currentRoute != AppDestinations.MAIN_MENU
                 ) {
                     AppBottomNavigationBar(
@@ -163,9 +157,8 @@ fun ScanerTestovApp() {
                     )
                 }
                 composable(AppDestinations.REALTIME_SCAN) {
-                    RealtimeScanScreen(
-                        onAction = { action -> handleRealtimeScanAction(navController, action) }
-                    )
+                    // Живая проверка (пробная). Прежний режим со стоп-кадром — RealtimeScanScreen, код сохранён.
+                    com.tscan.scanertestov.feature.live.LiveScanScreen(onBack = { navController.popBackStack() })
                 }
                 composable(AppDestinations.BATCH_PROCESSING) {
                     BatchProcessingRoute(navController = navController)
@@ -184,10 +177,14 @@ fun ScanerTestovApp() {
                 composable(AppDestinations.REPORTS) {
                     ReportsRoute(navController = navController)
                 }
-                composable(AppDestinations.BLANK_EDITOR) {
-                    BlankEditorScreen(
-                        onAction = { action -> handleBlankEditorAction(navController, action) }
-                    )
+                composable(AppDestinations.TESTS) {
+                    com.tscan.scanertestov.feature.tests.TestsRoute(navController = navController)
+                }
+                composable(AppDestinations.TEST_EDIT) {
+                    com.tscan.scanertestov.feature.tests.TestWizardRoute(navController = navController)
+                }
+                composable(AppDestinations.TEMPLATES) {
+                    com.tscan.scanertestov.feature.tests.TemplatesRoute(navController = navController)
                 }
                 composable(AppDestinations.INSTRUCTIONS) {
                     InstructionsScreen(
@@ -202,7 +199,6 @@ fun ScanerTestovApp() {
                     SettingsScreen(
                         state = SettingsState(
                             isQuickAccessBarEnabled = isQuickAccessBarEnabled,
-                            selectedInferenceModel = inferenceModel,
                             gradingCriteria = gradingCriteria,
                             omrMlConfidenceThreshold = omrMlConfidenceThreshold,
                         ),
@@ -212,7 +208,6 @@ fun ScanerTestovApp() {
                                 navController = navController,
                                 action = action,
                                 onQuickAccessBarChanged = { isQuickAccessBarEnabled = it },
-                                onInferenceModelChanged = { inferenceModel = it },
                                 onGradingCriteriaChanged = { gradingCriteria = it },
                                 onOmrMlConfidenceThresholdChanged = { omrMlConfidenceThreshold = it },
                             )

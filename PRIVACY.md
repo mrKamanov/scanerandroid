@@ -5,74 +5,85 @@
 **Приложение:** Сканер тестов  
 **Разработчик:** Сергей Каманов  
 **Дата вступления в силу:** 19 мая 2026 г.  
-**Последнее обновление:** 19 мая 2026 г.
+**Последнее обновление:** 20 ноября 2026 г. (версия приложения 0.3.0)
 
-Ниже описано, какие данные использует приложение «Сканер тестов» и как с ними обращаются. Полный текст можно открыть в **Настройках** приложения или по ссылке в RuStore.  
+Ниже описано, какие данные использует приложение «Сканер тестов» и как с ними обращаются. Текст можно открыть в **Настройках** приложения или по ссылке в карточке приложения в RuStore.  
 **English version** — [below](#privacy-policy-english).
 
 ## 1. Кратко
 
-«Сканер тестов» помогает проверять тестовые бланки с помощью камеры или фотографий. **Проверка выполняется на вашем устройстве.** Мы **не** продаём персональные данные и **не** передаём их на свои серверы для распознавания бланков: у приложения нет обязательного аккаунта и облачной проверки.
+«Сканер тестов» помогает учителю проверять тестовые бланки по фотографии. **Вся обработка — распознавание бланков, проверка ответов, отчёты — выполняется на вашем устройстве.** У приложения нет аккаунтов, серверов и облачной проверки. Разработчик **не получает** ни фотографии бланков, ни списки учеников, ни результаты. Реклама и аналитика в приложении не используются.
 
 ## 2. Какие данные обрабатываются
 
-В зависимости от того, как вы пользуетесь приложением, на устройстве могут обрабатываться:
+| Данные | Зачем | Где хранятся |
+|--------|-------|--------------|
+| **Изображения с камеры** | Найти бланк в кадре и распознать отметки | В «Один бланк в камере» — только в оперативной памяти. В «Проверке класса» снимки сохраняются в памяти приложения, пока вы их не удалите из очереди |
+| **Фото из галереи** | Вы сами выбираете снимки бланков для проверки | Приложение получает доступ только к выбранным файлам |
+| **Журнал: классы, фамилии, имена, отчества** | Именные бланки, подписи работ, отчёты | Локально в памяти приложения |
+| **Номера учеников на именных бланках** | Чтобы при проверке подставить фамилию по номеру | Локально, отдельно для каждого теста; удаляются вместе с тестом |
+| **Вырезка поля «Фамилия, имя» с бланка** | Показать учителю подпись ученика на карточке работы | Локально в памяти приложения |
+| **Тесты, правильные ответы, результаты, отчёты (с копиями бланков)** | Оценки, отчёты по классам | Локально в памяти приложения |
+| **Настройки** (критерии оценок, подсказки) | Работа приложения | Локально |
 
-| Данные | Зачем | Куда попадают |
-|--------|--------|----------------|
-| **Изображения с камеры** | Поиск контура бланка, распознавание отметок | Только на устройстве, в оперативной памяти и при сохранении в очередь пакетной обработки — по вашим действиям |
-| **Фото из галереи** | Вы сами выбираете файл для проверки | Обрабатываются на устройстве; приложение получает доступ только к выбранному вами файлу |
-| **ФИО, классы, журнал** | Учёт учеников и отчёты | Хранятся **локально** в памяти приложения на устройстве |
-| **Эталонные ответы, результаты проверки** | Оценка и отчёты | Локально на устройстве |
-| **Настройки** (модель ИИ, критерии оценок и т.д.) | Работа приложения | Локально на устройстве |
-
-Мы **не** собираем эти данные централизованно на серверах разработчика.
+Мы **не** собираем эти данные на серверах разработчика и **не** передаём их третьим лицам.
 
 ## 3. Разрешения Android
 
-**Камера** — чтобы снимать бланки в режиме быстрой проверки и при съёмке в пакетной обработке. Без разрешения эти функции недоступны; изображение не отправляется разработчику автоматически.
+**Камера** — чтобы снимать бланки в «Проверке класса» и в режиме «Один бланк в камере». Без разрешения эти функции недоступны.
 
-**Доступ к выбранным файлам (галерея)** — через стандартный выбор файла системы. Приложение не запрашивает полный доступ ко всем фото на устройстве, если это не требуется версией Android для конкретного сценария.
+**Доступ к файлам** — только через стандартные системные окна выбора и сохранения: когда вы сами выбираете фото бланков, загружаете список учеников (Excel или CSV) или сохраняете шаблон, бланк для печати или отчёт (Excel, PDF). Полный доступ ко всем фото и файлам на устройстве приложение не запрашивает.
 
-## 4. Интернет и третьи стороны
+**Интернет** приложению не нужен и не используется.
 
-- Для **основной проверки бланков** интернет **не нужен**.
-- При **открытии ссылки** на эту политику или на исходный код (из настроек) используется браузер — действует политика конфиденциальности вашего браузера и хостинга (например, GitHub).
-- В приложении используются библиотеки с открытым исходным кодом (OpenCV, ONNX Runtime и др.). Они выполняют вычисления **на устройстве** и не являются нашей «облачной» обработкой ваших бланков.
+## 4. Файлы, которые вы сохраняете и отправляете
 
-Мы **не** передаём содержимое бланков рекламным сетям и брокерам данных.
+Бланки для печати и отчёты (PDF, Excel, картинки) создаются по вашей команде. Если вы отправляете такой файл через системное окно «Поделиться» (почта, мессенджер, облачный диск), дальше он обрабатывается выбранным вами сервисом по его правилам. Приложение само ничего никуда не отправляет.
 
-## 5. Хранение и удаление
+## 5. Сторонние компоненты
 
-Данные остаются на устройстве, пока вы их не удалите (очистка очереди, журнала, удаление приложения) или пока не сработает резервное копирование Android/Google, если оно у вас включено.
+В приложении используются библиотеки с открытым исходным кодом (OpenCV, ONNX Runtime, Apache POI и др.) и встроенная нейросеть для распознавания кружков. Все они работают **на устройстве** и не передают данные в сеть.
 
-При **удалении приложения** локальные данные приложения, как правило, удаляются вместе с ним (зависит от настроек устройства и резервных копий).
+Ссылка на эту политику в настройках открывается в вашем браузере на сайте GitHub — там действуют правила браузера и GitHub.
 
-## 6. Дети и школы
+## 6. Резервное копирование
 
-Приложение предназначено для **педагогов** и лиц, проверяющих работы. Ответственность за законность обработки персональных данных учеников (согласия, политика школы) несёт **организация или учитель**, использующий приложение. Рекомендуем не публиковать фотографии бланков с персональными данными в открытом доступе.
+Если на устройстве включено системное резервное копирование Android, в копию могут попасть журнал, тесты, отчёты и настройки — так они переносятся на новый телефон. **Снимки бланков, вырезки подписей учеников и копии бланков в отчётах в резервную копию не включаются.** Резервное копирование настраивается в параметрах Android и выполняется системой, а не приложением.
 
-## 7. Безопасность
+## 7. Хранение и удаление
 
-Мы проектируем приложение так, чтобы обработка оставалась на устройстве. Полной защиты от компрометации самого телефона (взлом, вредоносное ПО) ни одно приложение не гарантирует — защищайте устройство паролем и обновлениями системы.
+Данные хранятся на устройстве, пока вы их не удалите:
+- снимки — кнопкой «Очистить список» или «Убрать» на экране проверки;
+- ученики и классы — в «Журналах»;
+- отчёты — в «Отчётах»;
+- тест вместе с выданными по нему номерами учеников — в «Моих тестах».
 
-## 8. Ваши права
+При удалении приложения все его данные удаляются с устройства. Файлы, которые вы сами сохранили в «Загрузки» или другие папки, остаются там.
+
+## 8. Дети и школы
+
+Приложение предназначено для **педагогов**; ученики им не пользуются и учётных записей в нём нет. Фамилии и результаты учеников вносит учитель, и за законность их обработки (в том числе по Федеральному закону № 152-ФЗ «О персональных данных» и правилам школы) отвечает **учитель или образовательная организация**. Рекомендуем не публиковать фотографии бланков и отчёты с фамилиями учеников в открытом доступе.
+
+## 9. Безопасность
+
+Приложение устроено так, чтобы данные не покидали устройство. Защитить сам телефон от кражи или вредоносных программ приложение не может — используйте блокировку экрана и обновления системы.
+
+## 10. Ваши права
 
 Вы можете в любой момент:
+- не давать разрешение на камеру (часть функций будет недоступна);
+- удалить любые данные внутри приложения (см. раздел 7);
+- удалить приложение вместе со всеми его данными.
 
-- прекратить использование и удалить приложение;
-- не давать разрешение камере (часть функций будет недоступна);
-- очистить данные внутри приложения (журналы, очередь), где это предусмотрено интерфейсом.
+Вопросы об обработке данных: **mr.kamanov@yandex.ru**.
 
-По вопросам обработки данных в связи с этим приложением обращайтесь по **контактному email, указанному в карточке приложения в RuStore** (или в описании репозитория исходного кода).
+## 11. Изменения политики
 
-## 9. Изменения политики
+Мы можем обновлять этот текст; дата последнего обновления указана в начале. Продолжая пользоваться приложением после изменений, вы соглашаетесь с обновлённой политикой, если иное не требуется законом.
 
-Мы можем обновлять этот текст. Актуальная дата указана в начале документа. Продолжая пользоваться приложением после изменений, вы соглашаетесь с обновлённой политикой, если иное не требуется законом.
+## 12. Лицензия на программное обеспечение
 
-## 10. Лицензия на программное обеспечение
-
-Исходный код приложения распространяется по лицензии **GNU GPL v3**. Это отдельно от настоящей политики конфиденциальности. Текст лицензии: файл [LICENSE](LICENSE) в репозитории.
+Программа распространяется по лицензии **GNU GPL v3** — это отдельно от настоящей политики. Текст лицензии: файл [LICENSE](LICENSE).
 
 ---
 
@@ -83,71 +94,73 @@
 **App:** Test Scanner (Сканер тестов)  
 **Developer:** Sergey Kamanov  
 **Effective date:** May 19, 2026  
-**Last updated:** May 19, 2026
+**Last updated:** November 20, 2026 (app version 0.3.0)
 
-This document explains what data the app uses and how it is handled. You can open the full text in the app **Settings** or via the link in the RuStore store listing.  
+This document explains what data the app uses and how it is handled. You can open it from the app **Settings** or via the link in the RuStore listing.  
 **Russian version** — [above](#privacy-policy-russian).
 
 ## 1. Summary
 
-“Test Scanner” helps you check test answer sheets using the camera or photos. **Processing runs on your device.** We **do not** sell personal data or send it to our servers for sheet recognition: the app has no mandatory account and no cloud-based checking.
+Test Scanner helps teachers grade multiple-choice answer sheets from photos. **All processing — sheet recognition, grading, reports — runs on your device.** The app has no accounts, no servers and no cloud processing. The developer **does not receive** sheet photos, student lists or results. The app contains no ads and no analytics.
 
-## 2. Data we process
+## 2. Data processed
 
-Depending on how you use the app, the following may be processed **on your device**:
+| Data | Purpose | Where it is stored |
+|------|---------|--------------------|
+| **Camera images** | Find the sheet and read the marks | In “One sheet in camera” — memory only. In “Check a class” photos are kept in app storage until you remove them from the queue |
+| **Gallery photos** | You pick sheet photos to check | The app only accesses the files you select |
+| **Journal: classes, students’ names** | Named sheets, work labels, reports | Locally in app storage |
+| **Student numbers on named sheets** | To fill in the student’s name by the number when checking | Locally, per test; deleted with the test |
+| **Crop of the “Name” field from a sheet** | To show the teacher the student’s handwriting on the work card | Locally in app storage |
+| **Tests, answer keys, results, reports (with sheet copies)** | Grades and class reports | Locally in app storage |
+| **Settings** (grading rules, tips) | App operation | Locally |
 
-| Data | Purpose | Where it goes |
-|------|---------|----------------|
-| **Camera images** | Find the sheet outline, read marks | On device only; in memory and in the batch queue when you save items |
-| **Gallery photos** | You choose a file to check | Processed on device; the app only accesses the file you select |
-| **Names, classes, journal** | Student records and reports | Stored **locally** in the app on the device |
-| **Answer keys, check results** | Grading and reports | On device only |
-| **Settings** (AI model, grading rules, etc.) | App operation | On device only |
-
-We **do not** collect this data centrally on the developer’s servers.
+We **do not** collect this data on developer servers and **do not** share it with third parties.
 
 ## 3. Android permissions
 
-**Camera** — to capture sheets in quick scan mode and in batch capture. Without permission these features are unavailable; images are not sent to the developer automatically.
+**Camera** — to capture sheets in “Check a class” and “One sheet in camera”. Without it these features are unavailable.
 
-**Selected files (gallery)** — via the system file picker. The app does not request broad access to all photos on the device unless a specific Android version requires it for your chosen flow.
+**Files** — only through the standard system pickers: when you choose sheet photos, import a student list (Excel or CSV), or save a template, printable sheets or a report (Excel, PDF). The app does not request broad access to all photos or files.
 
-## 4. Internet and third parties
+**Internet** is not required and not used.
 
-- **Core sheet checking** does **not** require internet.
-- Opening this policy or the source-code link (from Settings) uses your browser — your browser and host (e.g. GitHub) privacy terms apply.
-- The app uses open-source libraries (OpenCV, ONNX Runtime, etc.). They run **on device**; they are not our cloud processing of your sheets.
+## 4. Files you save and share
 
-We **do not** share sheet content with ad networks or data brokers.
+Printable sheets and reports (PDF, Excel, images) are created on your command. If you send such a file via the system Share sheet (email, messenger, cloud drive), the chosen service handles it under its own terms. The app itself never sends anything.
 
-## 5. Storage and deletion
+## 5. Third-party components
 
-Data stays on the device until you delete it (clear the queue, journal, uninstall the app) or until Android/Google backup runs if you have it enabled.
+The app uses open-source libraries (OpenCV, ONNX Runtime, Apache POI, etc.) and a built-in neural network for reading bubbles. All of them run **on the device** and do not send data over the network.
 
-**Uninstalling the app** usually removes local app data (depends on device and backup settings).
+The privacy-policy link in Settings opens in your browser on GitHub; the browser’s and GitHub’s terms apply there.
 
-## 6. Children and schools
+## 6. Backup
 
-The app is intended for **teachers** and others who grade work. The **school or teacher** using the app is responsible for lawful processing of students’ personal data (consents, school policies). Do not publish photos of sheets with personal data in public places.
+If Android system backup is enabled, the journal, tests, reports and settings may be included so they move to a new phone. **Sheet photos, crops of students’ handwriting and sheet copies in reports are excluded from backup.** Backup is configured in Android settings and performed by the system, not by the app.
 
-## 7. Security
+## 7. Retention and deletion
 
-We design the app so processing stays on the device. No app can fully prevent compromise of a stolen or infected phone — use a device PIN/password and system updates.
+Data stays on the device until you delete it: photos — “Clear list” / “Remove” on the check screen; students and classes — in “Journals”; reports — in “Reports”; a test together with the student numbers issued for it — in “My tests”. Uninstalling the app deletes all its data from the device. Files you saved yourself to Downloads or other folders remain there.
 
-## 8. Your choices
+## 8. Children and schools
 
-You can at any time:
+The app is intended for **teachers**; students do not use it and have no accounts. Students’ names and results are entered by the teacher, and the **teacher or school** is responsible for lawful processing of this personal data (including Russian Federal Law No. 152-FZ “On Personal Data” and school rules). Do not publish photos of sheets or reports with students’ names publicly.
 
-- stop using the app and uninstall it;
-- deny camera permission (some features will be unavailable);
-- clear in-app data (journals, queue) where the UI allows it.
+## 9. Security
 
-For questions about data processing related to this app, use the **support email listed on the RuStore store listing** (or in the source repository description).
+The app is designed so that data never leaves the device. It cannot protect a stolen or infected phone — use a screen lock and system updates.
 
-## 9. Changes to this policy
+## 10. Your choices
 
-We may update this text. The current date is at the top. By continuing to use the app after changes, you accept the updated policy unless applicable law requires otherwise.
+You can at any time deny camera permission (some features become unavailable), delete any data inside the app (see section 7), or uninstall the app with all its data.
 
-## 10. Software license
+Questions about data processing: **mr.kamanov@yandex.ru**.
 
-The app’s source code is licensed under **GNU GPL v3**, separate from this privacy policy. See [LICENSE](LICENSE) in the repository.
+## 11. Changes
+
+We may update this text; the last-updated date is at the top. By continuing to use the app after changes, you accept the updated policy unless the law requires otherwise.
+
+## 12. Software license
+
+The software is licensed under **GNU GPL v3**, separately from this policy. See [LICENSE](LICENSE).

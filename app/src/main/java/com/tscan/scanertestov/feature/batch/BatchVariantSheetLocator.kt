@@ -47,7 +47,12 @@ fun extractVariantCropFromPhoto(
     questionCount: Int,
     optionCount: Int,
     columnCount: Int,
+    context: android.content.Context? = null,
 ): Mat {
+    extractVariantAndNameCropsByGrid(context, sourceBitmap, questionCount, optionCount, columnCount)?.let { (v, n) ->
+        n.release()
+        return v
+    }
     val snapshot = buildLocatorSnapshot(sourceBitmap)
     try {
         return Mat(snapshot.imageBgr, snapshot.cropRect).clone()
@@ -61,7 +66,12 @@ fun extractStudentNameCropFromPhoto(
     questionCount: Int,
     optionCount: Int,
     columnCount: Int,
+    context: android.content.Context? = null,
 ): Mat {
+    extractVariantAndNameCropsByGrid(context, sourceBitmap, questionCount, optionCount, columnCount)?.let { (v, n) ->
+        v.release()
+        return n
+    }
     val snapshot = buildLocatorSnapshot(sourceBitmap)
     try {
         val nameRect = buildStudentNameRect(
@@ -76,7 +86,15 @@ fun extractStudentNameCropFromPhoto(
     }
 }
 
-fun extractVariantAndNameCropsSingleSnapshot(sourceBitmap: Bitmap): Pair<Mat, Mat> {
+fun extractVariantAndNameCropsSingleSnapshot(
+    sourceBitmap: Bitmap,
+    questionCount: Int = 0,
+    optionCount: Int = 0,
+    columnCount: Int = 1,
+    context: android.content.Context? = null,
+): Pair<Mat, Mat> {
+    // Сначала — по найденной сетке (точно), иначе — прежний поиск шестиугольника.
+    extractVariantAndNameCropsByGrid(context, sourceBitmap, questionCount, optionCount, columnCount)?.let { return it }
     val snapshot = buildLocatorSnapshot(sourceBitmap)
     try {
         val variantCrop = Mat(snapshot.imageBgr, snapshot.cropRect).clone()

@@ -31,11 +31,12 @@ internal object RealtimeOmrRunner {
             answerKey = answerKey,
             strictScoring = strictScoring,
         )
-        BatchOmrEngine.processWithSheetContour(
+        // Стоп-кадр проходит тот же полный путь, что и пакетная проверка: точная подгонка,
+        // ориентация, отказ «не бланк». Контур из превью нужен только для подсказки на экране.
+        BatchOmrEngine.process(
             context = context.applicationContext,
             bitmap = cameraFrame,
             config = config,
-            sheetContour = sheetContour,
         )
     }
 }

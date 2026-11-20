@@ -6,6 +6,7 @@ package com.tscan.scanertestov.feature.batch.engine
 import android.graphics.Bitmap
 import android.content.Context
 import android.util.Log
+import com.tscan.scanertestov.data.PrintedBlankParamsStore
 import com.tscan.scanertestov.feature.blankeditor.BlankBubbleLayout
 import com.tscan.scanertestov.feature.blankeditor.BlankBubbleRenderParams
 import com.tscan.scanertestov.feature.blankeditor.BlankEditorLayoutConfig
@@ -75,6 +76,8 @@ internal object BatchOmrEngine {
         bitmap: Bitmap,
         config: BatchOmrConfig,
         requireLCornerWarp: Boolean = false,
+        useLegacyFallback: Boolean = false,
+        debugOverlay: Boolean = false,
     ): BatchOmrResult {
         if (!ensureOpenCvLoaded()) {
             Log.e(PERF_TAG, "OpenCV не инициализирован, OMR остановлен")
@@ -107,6 +110,28 @@ internal object BatchOmrEngine {
                 Core.rotate(bgr, bgr, Core.ROTATE_90_CLOCKWISE)
             }
             val prepMs = lapMs()
+            // Новый поиск сетки по устройству бланка. Если он не уверен — бланк не принимаем:
+            // лучше «переснимите», чем уверенно неверная оценка.
+            val loc = BatchGridLocator.locateAny(
+                bgr, config.questionsCount, config.choicesCount, config.columnCount,
+                PrintedBlankParamsStore.load(context), config.hiddenBubbleIds,
+            )
+            val locateMs = lapMs()
+            if (loc != null && loc.score >= BatchGridLocator.MIN_SCORE) {
+                try {
+                    val r = classifyByGrid(context, bgr, config, loc, debugOverlay)
+                    val classifyMs = lapMs()
+                    Log.i(PERF_TAG, "OMR grid ok: total=${(System.nanoTime() - tWall0) / 1_000_000L}ms prep=${prepMs} locate=${locateMs} classify=${classifyMs} score=${"%.2f".format(loc.score)} flipped=${loc.flipped}")
+                    return r
+                } finally {
+                    loc.homography.release()
+                }
+            }
+            loc?.homography?.release()
+            if (!useLegacyFallback) {
+                Log.i(PERF_TAG, "OMR: сетка не найдена (score=${loc?.score})")
+                return emptyContourResult()
+            }
             val bubbleLayoutForL = buildBlankBubbleLayout(
                 BlankEditorLayoutConfig(
                     questionCount = config.questionsCount,
@@ -282,6 +307,293 @@ internal object BatchOmrEngine {
             bgr.release()
         }
     }
+
+    /** Рамки сетки в пикселях канона: по одной на столбец, границы — по шагу кружков. */
+    private fun gridFrames(g: GridGeometry, s: Double): List<BatchColumnFrameGrid> {
+        val choices = (g.bubbles.maxOfOrNull { it.choice } ?: 0) + 1
+        return g.frames.mapNotNull { f ->
+            val inFrame = g.bubbles.filter { it.cx >= f[0] && it.cx <= f[2] && it.cy >= f[1] && it.cy <= f[3] }
+            val real = inFrame.filter { !it.placeholder }
+            if (real.isEmpty()) return@mapNotNull null
+            val left = (inFrame.minOf { it.cx } - g.pitchX / 2) * s
+            val top = (inFrame.minOf { it.cy } - g.pitchY / 2) * s
+            val rowsInFrame = inFrame.map { it.cy }.distinct().size
+            BatchColumnFrameGrid(
+                questionStart = real.minOf { it.question },
+                questionCount = real.map { it.question }.distinct().size,
+                frameBubbleRows = rowsInFrame,
+                innerLeft = left.roundToInt(),
+                innerTop = top.roundToInt(),
+                innerRight = (left + choices * g.pitchX * s).roundToInt(),
+                innerBottom = (top + rowsInFrame * g.pitchY * s).roundToInt(),
+            )
+        }
+    }
+
+    /** Ячейки вырезаются по центрам кружков из выпрямленного канона — шаг сетки известен точно. */
+    private fun classifyByGrid(
+        context: Context,
+        bgr: Mat,
+        config: BatchOmrConfig,
+        loc: GridLocation,
+        debugOverlay: Boolean,
+    ): BatchOmrResult {
+        val t0 = System.nanoTime()
+        val canon = BatchGridLocator.warpCanon(bgr, loc)
+        BatchGridLocator.normalizeContrast(canon)
+        val g0 = loc.geometry
+        // Изогнутый лист: центры кружков уточняются по самим кольцам.
+        val centers = BatchGridLocator.refineBubbleCenters(canon, g0)
+        val g = g0.copy(bubbles = g0.bubbles.mapIndexed { i, b -> b.copy(cx = centers[i].first, cy = centers[i].second) })
+        val s = BatchGridLocator.SCALE
+        val cells = ArrayList<Triple<Int, Int, Mat>>()
+        try {
+            val cw = (g.pitchX * s).roundToInt()
+            val ch = (g.pitchY * s).roundToInt()
+            for (b in g.bubbles) {
+                if (b.placeholder || b.question !in 0 until config.questionsCount) continue
+                val x0 = (b.cx * s - cw / 2.0).roundToInt().coerceIn(0, canon.cols() - cw)
+                val y0 = (b.cy * s - ch / 2.0).roundToInt().coerceIn(0, canon.rows() - ch)
+                cells += Triple(b.question, b.choice, Mat(canon, Rect(x0, y0, cw, ch)).clone())
+            }
+            val tCells = System.nanoTime()
+            val rawPredictions = try {
+                BatchCellClassifier.classifyCells(cells, context)
+            } finally {
+                cells.forEach { it.third.release() }
+            }
+            Log.i("BatchGridPerf", "classify prep=${(tCells - t0) / 1_000_000} nn=${(System.nanoTime() - tCells) / 1_000_000} ms")
+            val predictions = promoteDarkBubbles(context, canon, g, rawPredictions, s)
+            val scores = BatchScoringEngine.score(predictions, config)
+            // Экраны результатов сами подсвечивают клетки, поэтому отдаём чистый выпрямленный
+            // бланк и точные рамки сетки; картинка с кружками — только для отладочного прогона.
+            val overlay = if (debugOverlay) {
+                BatchSheetGridOverlay.renderPredictions(canon, g, predictions, s)
+            } else {
+                BatchSheetGridOverlay.canonToBitmap(canon)
+            }
+            val frames = gridFrames(g0, s)
+            return BatchOmrResult(
+                predictions = predictions,
+                questionScores = scores,
+                fixedCells = predictions.filter { it.klass == BatchCellClass.Fixed },
+                contourFound = true,
+                sheetCropBitmap = overlay,
+                columnFrames = frames,
+                gridScore = loc.score,
+                flipped = loc.flipped,
+            )
+        } finally {
+            canon.release()
+        }
+    }
+
+    /**
+     * Живая проверка: сетка уже найдена (обычно по меткам — [BatchGridLocator.locateByMarkers]).
+     * [useModel] = true — нейросеть, как в пакетной проверке; false — чистый OpenCV по доле чернил в кружке.
+     * [loc] освобождает вызывающий.
+     */
+    internal fun classifyLocated(
+        context: Context,
+        bgr: Mat,
+        config: BatchOmrConfig,
+        loc: GridLocation,
+        useModel: Boolean,
+    ): BatchOmrResult =
+        if (useModel) classifyHybrid(context, bgr, config, loc)
+        else classifyByInk(bgr, config, loc)
+
+    /**
+     * Чистый OpenCV: после выравнивания яркости бумага белая, чернила чёрные; считаем долю тёмных точек
+     * во внутреннем круге (кольцо кружка не попадает). Закрашен — много, перечёркнут/исправлен — средне.
+     */
+    /** Выпрямленный канон с уточнёнными центрами и доля чернил во внутреннем круге каждого кружка. */
+    private class InkSheet(val canon: Mat, val g: GridGeometry, val fills: Map<Pair<Int, Int>, Float>)
+
+    private fun inkSheet(bgr: Mat, config: BatchOmrConfig, loc: GridLocation): InkSheet {
+        val canon = BatchGridLocator.warpCanon(bgr, loc)
+        val gray = Mat()
+        val bin = Mat()
+        try {
+            BatchGridLocator.normalizeContrast(canon)
+            val g0 = loc.geometry
+            val centers = BatchGridLocator.refineBubbleCenters(canon, g0)
+            val g = g0.copy(bubbles = g0.bubbles.mapIndexed { i, b -> b.copy(cx = centers[i].first, cy = centers[i].second) })
+            val s = BatchGridLocator.SCALE
+            Imgproc.cvtColor(canon, gray, Imgproc.COLOR_BGR2GRAY)
+            Imgproc.threshold(gray, bin, INK_LEVEL, 255.0, Imgproc.THRESH_BINARY_INV)
+            val r = (g.bubbleSize / 2 * s * 0.55).roundToInt().coerceAtLeast(2)
+            val w = bin.cols()
+            val h = bin.rows()
+            val px = ByteArray(w * h)
+            bin.get(0, 0, px)
+            val fills = HashMap<Pair<Int, Int>, Float>()
+            for (b in g.bubbles) {
+                if (b.placeholder || b.question !in 0 until config.questionsCount) continue
+                val cx = (b.cx * s).roundToInt()
+                val cy = (b.cy * s).roundToInt()
+                var all = 0
+                var ink = 0
+                for (y in (cy - r).coerceAtLeast(0)..(cy + r).coerceAtMost(h - 1)) {
+                    for (x in (cx - r).coerceAtLeast(0)..(cx + r).coerceAtMost(w - 1)) {
+                        val dx = x - cx
+                        val dy = y - cy
+                        if (dx * dx + dy * dy > r * r) continue
+                        all++
+                        if (px[y * w + x].toInt() != 0) ink++
+                    }
+                }
+                fills[b.question to b.choice] = if (all == 0) 0f else ink.toFloat() / all
+            }
+            return InkSheet(canon, g, fills)
+        } catch (e: Throwable) {
+            canon.release()
+            throw e
+        } finally {
+            gray.release(); bin.release()
+        }
+    }
+
+    private fun liveResult(sheet: InkSheet, loc: GridLocation, config: BatchOmrConfig, predictions: List<BatchCellPrediction>): BatchOmrResult {
+        val scores = BatchScoringEngine.score(predictions, config)
+        return BatchOmrResult(
+            predictions = predictions,
+            questionScores = scores,
+            fixedCells = predictions.filter { it.klass == BatchCellClass.Fixed },
+            contourFound = true,
+            sheetCropBitmap = BatchSheetGridOverlay.canonToBitmap(sheet.canon),
+            columnFrames = gridFrames(loc.geometry, BatchGridLocator.SCALE),
+            gridScore = loc.score,
+            flipped = loc.flipped,
+        )
+    }
+
+    /**
+     * Чистый OpenCV: после выравнивания яркости бумага белая, чернила чёрные; считаем долю тёмных точек
+     * во внутреннем круге (кольцо кружка не попадает). Закрашен — много, перечёркнут/исправлен — средне.
+     */
+    private fun classifyByInk(bgr: Mat, config: BatchOmrConfig, loc: GridLocation): BatchOmrResult {
+        val sheet = inkSheet(bgr, config, loc)
+        try {
+            val predictions = sheet.fills.map { (k, fill) ->
+                val klass = when {
+                    fill >= INK_FILLED -> BatchCellClass.Yes
+                    fill >= INK_PARTIAL -> BatchCellClass.Fixed
+                    else -> BatchCellClass.No
+                }
+                // «Уверенность» — насколько далеко от ближайшего порога.
+                val conf = when (klass) {
+                    BatchCellClass.Yes -> (0.5f + (fill - INK_FILLED)).coerceIn(0.5f, 1f)
+                    BatchCellClass.No -> (0.5f + (INK_PARTIAL - fill) * 2f).coerceIn(0.5f, 1f)
+                    BatchCellClass.Fixed -> 0.5f
+                }
+                BatchCellPrediction(k.first, k.second, klass, conf)
+            }.sortedWith(compareBy({ it.questionIndex }, { it.choiceIndex }))
+            return liveResult(sheet, loc, config, predictions)
+        } finally {
+            sheet.canon.release()
+        }
+    }
+
+    /**
+     * Нейросеть для живой проверки: явно пустые кружки (чернил меньше [INK_EMPTY] — с большим запасом, слабая
+     * штриховка даёт больше) решаются сразу, нейросеть смотрит только остальные. ~4× быстрее, чем все 80.
+     */
+    private fun classifyHybrid(context: Context, bgr: Mat, config: BatchOmrConfig, loc: GridLocation): BatchOmrResult {
+        val sheet = inkSheet(bgr, config, loc)
+        val s = BatchGridLocator.SCALE
+        val cells = ArrayList<Triple<Int, Int, Mat>>()
+        try {
+            val cw = (sheet.g.pitchX * s).roundToInt()
+            val ch = (sheet.g.pitchY * s).roundToInt()
+            val canon = sheet.canon
+            for (b in sheet.g.bubbles) {
+                if (b.placeholder || b.question !in 0 until config.questionsCount) continue
+                if ((sheet.fills[b.question to b.choice] ?: 1f) < INK_EMPTY) continue
+                val x0 = (b.cx * s - cw / 2.0).roundToInt().coerceIn(0, canon.cols() - cw)
+                val y0 = (b.cy * s - ch / 2.0).roundToInt().coerceIn(0, canon.rows() - ch)
+                cells += Triple(b.question, b.choice, Mat(canon, Rect(x0, y0, cw, ch)).clone())
+            }
+            val nn = try { BatchCellClassifier.classifyCells(cells, context) } finally { cells.forEach { it.third.release() } }
+            val byCell = nn.associateBy { it.questionIndex to it.choiceIndex }
+            val raw = sheet.fills.keys.map { k ->
+                byCell[k] ?: BatchCellPrediction(k.first, k.second, BatchCellClass.No, 0.99f)
+            }.sortedWith(compareBy({ it.questionIndex }, { it.choiceIndex }))
+            // «Второе мнение» по темноте — как в пакетной проверке ([classifyByGrid]).
+            val predictions = promoteDarkBubbles(context, sheet.canon, sheet.g, raw, s)
+            Log.i("BatchGridPerf", "гибрид: нейросеть по ${nn.size} из ${sheet.fills.size} кружков")
+            return liveResult(sheet, loc, config, predictions)
+        } finally {
+            sheet.canon.release()
+        }
+    }
+
+    private const val INK_LEVEL = 128.0
+    private const val INK_FILLED = 0.45f
+    private const val INK_PARTIAL = 0.22f
+    private const val INK_EMPTY = 0.06f
+
+    /**
+     * Второе мнение для слабых отметок: кружок, заштрихованный редкими штрихами, нейросеть
+     * иногда считает пустым. Если внутри он намного темнее пустых кружков этого же листа
+     * (порог подобран на 1313 кадрах), считаем его отмеченным.
+     */
+    private fun promoteDarkBubbles(
+        context: Context,
+        canon: Mat,
+        g: GridGeometry,
+        predictions: List<BatchCellPrediction>,
+        s: Double,
+    ): List<BatchCellPrediction> {
+        val gray = Mat()
+        val mask = Mat()
+        try {
+            Imgproc.cvtColor(canon, gray, Imgproc.COLOR_BGR2GRAY)
+            val r = (g.bubbleSize / 2 * s * 0.62).roundToInt()
+            val darkness = HashMap<Pair<Int, Int>, Double>()
+            mask.create(gray.rows(), gray.cols(), org.opencv.core.CvType.CV_8UC1)
+            for (b in g.bubbles) {
+                if (b.placeholder) continue
+                mask.setTo(org.opencv.core.Scalar(0.0))
+                Imgproc.circle(mask, Point(b.cx * s, b.cy * s), r, org.opencv.core.Scalar(255.0), -1)
+                darkness[b.question to b.choice] = 255.0 - Core.mean(gray, mask).`val`[0]
+            }
+            val empty = predictions.filter { it.klass == BatchCellClass.No && it.confidence >= 0.9f }
+                .mapNotNull { darkness[it.questionIndex to it.choiceIndex] }.sorted()
+            if (empty.size < 10) return predictions
+            val base = empty[empty.size / 2]
+            val dev = empty.map { kotlin.math.abs(it - base) }.sorted()
+            val mad = dev[dev.size / 2] + 1.0
+            return predictions.map { p ->
+                val d = darkness[p.questionIndex to p.choiceIndex] ?: return@map p
+                val z = (d - base) / mad
+                val pr = p.probs
+                // Неуверенная клетка («исправлено» только из-за порога): решаем по чернильности.
+                // Тёмный кружок, который нейросеть хоть немного допускает как отметку.
+                val darkEnough = z >= DARK_Z || (pr != null && z >= DARK_Z_SOFT && pr[1] >= DARK_SOFT_P_YES)
+                if (pr != null && p.klass == BatchCellClass.Fixed && pr.maxOrNull()!! < BatchCellMlClassifier.confidenceThreshold(context)) {
+                    val top = pr.indices.maxByOrNull { pr[it] } ?: 2
+                    when {
+                        top == 0 && z < DARK_Z_EMPTY -> return@map p.copy(klass = BatchCellClass.No)
+                        top != 2 && darkEnough -> return@map p.copy(klass = BatchCellClass.Yes)
+                    }
+                }
+                if (p.klass == BatchCellClass.No && darkEnough) {
+                    p.copy(klass = BatchCellClass.Yes, confidence = 0.5f)
+                } else p
+            }
+        } finally {
+            gray.release(); mask.release()
+        }
+    }
+
+    // Пороги пересмотрены после дообучения модели 128 (13.11.2026, 9 200 кружков с пробных листов):
+    // дообученная модель сама ловит слабую штриховку, а прежние 8 / 5 / 0.05 только добавляли ложные
+    // «закрашено» на тёмных пустых кружках. Оставлены как страховка для совсем необычных снимков.
+    private const val DARK_Z = 15.0
+    private const val DARK_Z_EMPTY = 4.0
+    private const val DARK_Z_SOFT = 10.0
+    private const val DARK_SOFT_P_YES = 0.3f
 
     private fun classifyWarpedSheet(
         context: Context,

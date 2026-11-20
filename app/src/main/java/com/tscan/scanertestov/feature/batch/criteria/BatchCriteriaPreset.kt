@@ -11,6 +11,10 @@ data class BatchCriteriaPreset(
     val columnCount: Int,
     val correctAnswers: List<List<Int>>,
     val variantAnswerKeys: List<BatchCriteriaVariantAnswers> = emptyList(),
+    /** Свои критерии оценки теста (JSON как в настройках); null — общие из Настроек. */
+    val gradingCriteriaJson: String? = null,
+    /** Оформление бланка теста (BlankDesign в JSON); null — бланк по умолчанию под число вопросов. */
+    val blankDesignJson: String? = null,
 )
 
 data class BatchCriteriaVariantAnswers(

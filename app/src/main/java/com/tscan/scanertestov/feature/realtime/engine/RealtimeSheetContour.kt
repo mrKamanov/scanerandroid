@@ -1,30 +1,34 @@
 package com.tscan.scanertestov.feature.realtime.engine
 
 /**
- * Описание: поиск контура бланка на кадре камеры для превью и OMR.
+ * Описание: поиск сетки бланка на кадре камеры для живого превью.
+ * Использует тот же поиск по устройству бланка, что и пакетная проверка (быстрый режим);
+ * контур показывается, только если сетка действительно узнана.
  */
 import android.graphics.Bitmap
-import com.tscan.scanertestov.feature.batch.engine.BatchSheetContourDetector
+import com.tscan.scanertestov.feature.batch.engine.BatchGridLocator
 import org.opencv.android.Utils
 import org.opencv.core.Mat
 import org.opencv.core.Point
 
 internal object RealtimeSheetContour {
+    private const val LIVE_MIN_SCORE = 0.2f
 
     fun detect(
         bitmap: Bitmap,
         questionsCount: Int,
         choicesCount: Int,
+        columnCount: Int = 1,
     ): Array<Point>? {
         if (!RealtimeOpenCvBootstrap.ensureLoaded()) return null
         val mat = Mat()
         return try {
             Utils.bitmapToMat(bitmap, mat)
-            BatchSheetContourDetector.findSheetContour(
-                inputBgr = mat,
-                questionsCount = questionsCount,
-                choicesCount = choicesCount,
-            )
+            val found = BatchGridLocator.locateFast(mat, questionsCount, choicesCount, columnCount)
+            // Порог для живого кадра мягче, чем для готового фото: превью мелкое и без точной
+            // подгонки, строгий порог (0.6) на нём почти не достигался — кнопки «Стоп-кадр» и
+            // «Проверить» оставались неактивными. Окончательное решение принимает полная проверка.
+            found?.takeIf { it.second >= LIVE_MIN_SCORE }?.first
         } finally {
             mat.release()
         }

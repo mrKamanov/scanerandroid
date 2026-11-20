@@ -11,7 +11,9 @@ object AppDestinations {
     const val BATCH_RESULTS = "batch_results"
     const val JOURNALS = "journals"
     const val REPORTS = "reports"
-    const val BLANK_EDITOR = "blank_editor"
+    const val TESTS = "tests"
+    const val TEST_EDIT = "test_edit"
+    const val TEMPLATES = "blank_templates"
     const val INSTRUCTIONS = "instructions"
     const val SETTINGS = "settings"
 }

@@ -203,17 +203,29 @@ fun blankLayoutBoundingRectTransformed(
     scale: Float,
 ): BlankLayoutRect = transformedRect(layout, pan = pan, scale = scale)
 
+/** Поле от края листа до бланка с уголками, ≈ 5 мм. */
+const val BLANK_SHEET_SAFE_MARGIN = 14f
+
 fun clampBlankPanOnSheet(
     pan: Offset,
     layout: BlankBubbleLayout,
     scale: Float,
-    marginLogical: Float = 8f,
+    // 14 логических ≈ 5 мм: ближе к краю многие принтеры не печатают.
+    marginLogical: Float = BLANK_SHEET_SAFE_MARGIN,
 ): Offset {
     val r = transformedRect(layout, pan = Offset.Zero, scale = scale)
-    val minX = marginLogical - r.left
-    val maxX = BlankSheetSpec.LOGICAL_WIDTH_PX - marginLogical - r.right
-    val minY = marginLogical - r.top
-    val maxY = BlankSheetSpec.LOGICAL_HEIGHT_PX - marginLogical - r.bottom
+    // Уголки-ориентиры вокруг рамки и шапка бланка v2 (угловые метки, вариант, поле имени) тоже должны остаться
+    // на листе: по ним бланк находится на фото.
+    val co = cornerMarkOutset(layout) * scale
+    val v2 = BlankV2Print.outset(layout)
+    val ml = marginLogical + maxOf(co, v2[0] * scale)
+    val mt = marginLogical + maxOf(co, v2[1] * scale)
+    val mr = marginLogical + maxOf(co, v2[2] * scale)
+    val mb = marginLogical + maxOf(co, v2[3] * scale)
+    val minX = ml - r.left
+    val maxX = BlankSheetSpec.LOGICAL_WIDTH_PX - mr - r.right
+    val minY = mt - r.top
+    val maxY = BlankSheetSpec.LOGICAL_HEIGHT_PX - mb - r.bottom
     return Offset(
         x = pan.x.coerceIn(minOf(minX, maxX), maxOf(minX, maxX)),
         y = pan.y.coerceIn(minOf(minY, maxY), maxOf(minY, maxY)),

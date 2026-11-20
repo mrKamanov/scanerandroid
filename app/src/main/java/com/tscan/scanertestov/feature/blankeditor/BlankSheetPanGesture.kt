@@ -6,6 +6,7 @@ package com.tscan.scanertestov.feature.blankeditor
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.drag
+import androidx.compose.foundation.gestures.waitForUpOrCancellation
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
@@ -40,6 +41,22 @@ fun Modifier.blankSheetPanAndTap(
                 val down = awaitFirstDown()
                 val pointerId = down.id
                 val panAtDown = getPan.value()
+                val downScale = size.width / BlankSheetSpec.LOGICAL_WIDTH_PX
+                // Двигаем сетку, только если палец опустился на неё. Иначе жест отдаём прокрутке
+                // экрана: раньше любой свайп по листу утаскивал сетку на шапку бланка.
+                val onGrid = downScale > 0f && hitTestBlankObjectTransformed(
+                    layout = layout,
+                    sheetPoint = Offset(down.position.x / downScale, down.position.y / downScale),
+                    pan = panAtDown,
+                    scale = clampBlankScale(getScale.value()),
+                )
+                if (!onGrid) {
+                    val up = waitForUpOrCancellation()
+                    if (up != null && (up.position - down.position).getDistance() < slop) {
+                        onTapOutsideState.value()
+                    }
+                    return@awaitEachGesture
+                }
                 onDragStart.value()
 
                 var accLogical = Offset.Zero

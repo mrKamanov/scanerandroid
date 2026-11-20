@@ -39,4 +39,28 @@ data class BatchResultsState(
     ),
     val fixedItems: List<BatchFixedCellUiItem> = emptyList(),
     val exportedToReportsIndices: Set<Int> = emptySet(),
+    /** Ученики из «Журналов» — для «Чья работа?». */
+    val roster: List<com.tscan.scanertestov.feature.journals.JournalStudent> = emptyList(),
+    /** Работа, которая повторяет уже добавленную в отчёт: спрашиваем, какую оставить. */
+    val duplicatePrompt: BatchDuplicatePrompt? = null,
+    /** Открыть «Чья работа?» для этой работы (после ответа «другой ученик»). */
+    val assignRequestIndex: Int? = null,
+)
+
+data class BatchDuplicatePrompt(
+    val itemIndex: Int,
+    val reportTitle: String,
+    val studentLabel: String,
+    val existingTitle: String,
+    val existingSheetPath: String?,
+    val existingGrade: Int,
+    val existingPercent: Float,
+    val newTitle: String,
+    val newSheetPath: String?,
+    val newGrade: Int,
+    val newPercent: Float,
+    /** Вопросы (с 1), где ответы различаются; пусто — совпали все. */
+    val differingQuestions: List<Int>,
+    val sameStudentByName: Boolean,
+    val remaining: Int,
 )

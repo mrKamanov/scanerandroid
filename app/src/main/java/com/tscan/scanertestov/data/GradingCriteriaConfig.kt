@@ -49,7 +49,15 @@ data class GradingCriteriaConfig(
             val hi = row.pointsMax ?: continue
             if (pointsSum >= lo && pointsSum <= hi) return row.grade
         }
-        return null
+        // Дробная сумма (частичное оценивание) может попасть в «щель» между строками,
+        // например 4.5 при строках 0–4 и 5–7: берём наивысшую оценку, чей минимум уже набран.
+        val sorted = rows.filter { it.pointsMin != null && it.pointsMax != null }
+        if (sorted.isEmpty()) return null
+        return sorted
+            .filter { pointsSum >= it.pointsMin!! }
+            .maxByOrNull { it.grade }
+            ?.grade
+            ?: sorted.minByOrNull { it.grade }?.grade
     }
 
     fun toPrefsString(): String {

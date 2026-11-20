@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Только debug-сборка: экран прогона распознавания по папке фото (для замеров точности). -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <activity
+            android:name=".debug.OmrBenchActivity"
+            android:exported="true" />
+        <activity
+            android:name=".debug.SynthTestActivity"
+            android:exported="true" />
+        <activity
+            android:name=".debug.DemoResultsActivity"
+            android:exported="true" />
+        <activity
+            android:name=".debug.LiveBenchActivity"
+            android:exported="true" />
+        <activity
+            android:name=".debug.BlankRoundTripActivity"
+            android:exported="true" />
+    </application>
+</manifest>

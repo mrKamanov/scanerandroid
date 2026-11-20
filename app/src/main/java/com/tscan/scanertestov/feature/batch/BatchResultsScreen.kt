@@ -3,7 +3,13 @@ package com.tscan.scanertestov.feature.batch
 /**
  * Описание: экран итогов пакетной обработки с переходом в отчеты.
  */
+import com.tscan.scanertestov.ui.components.stickerShadow
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.ui.graphics.compositeOver
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.draw.rotate
 import androidx.compose.foundation.Image
+import com.tscan.scanertestov.ui.theme.Scrapbook
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +23,7 @@ import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -52,6 +59,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -63,14 +71,18 @@ import com.tscan.scanertestov.ui.components.ScreenScaffold
 import com.tscan.scanertestov.ui.components.SettingsShellCard
 import com.tscan.scanertestov.ui.components.ShellBubblePrimaryButton
 import java.util.Locale
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import androidx.compose.runtime.produceState
+import android.graphics.Bitmap
 
 private fun BatchResultEntryState.canExportToReports(): Boolean =
     grade != null && percent != null && scoreCorrect != null && scoreTotal != null &&
         reportQuestionScores.isNotEmpty()
 
 private val EntryCardShape = RoundedCornerShape(12.dp)
-private val FrostedEntryBg = Color.White.copy(alpha = 0.08f)
-private val FrostedEntryBorder = Color.White.copy(alpha = 0.16f)
+private val FrostedEntryBg = Scrapbook.Ink.copy(alpha = 0.08f)
+private val FrostedEntryBorder = Scrapbook.Ink.copy(alpha = 0.16f)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -78,8 +90,9 @@ fun BatchResultsScreen(
     state: BatchResultsState = BatchResultsState(),
     onAction: (BatchResultsAction) -> Unit
 ) {
-    ScreenScaffold(onBack = { onAction(BatchResultsAction.Back) }) { padding ->
+    ScreenScaffold(onBack = { onAction(BatchResultsAction.Back) }, title = "Результаты") { padding ->
         var detailsIndex by remember { mutableStateOf<Int?>(null) }
+        var assignIndex by remember { mutableStateOf<Int?>(null) }
         val exportableIndices = remember(state.resultEntries) {
             state.resultEntries.mapIndexedNotNull { idx, e ->
                 if (e.canExportToReports()) idx else null
@@ -95,139 +108,54 @@ fun BatchResultsScreen(
             else -> state.sendAllToReportsButtonText
         }
 
+        LaunchedEffect(state.assignRequestIndex) {
+            state.assignRequestIndex?.let {
+                assignIndex = it
+                onAction(BatchResultsAction.AssignRequestHandled)
+            }
+        }
+        state.duplicatePrompt?.let { p -> DuplicateWorkDialog(p, onAction) }
+
+        assignIndex?.let { idx ->
+            val entry = state.resultEntries.getOrNull(idx)
+            if (entry != null) {
+                val taken = state.resultEntries.mapIndexedNotNull { i, e ->
+                    if (i == idx) null else listOfNotNull(e.reportStudentSurname, e.reportStudentName).joinToString(" ").trim().ifBlank { null }
+                }.toSet()
+                StudentPickerDialog(
+                    workTitle = entry.title,
+                    nameCropPath = entry.nameCropPath,
+                    roster = state.roster,
+                    preferredClass = entry.reportJournalClassName,
+                    alreadyAssigned = taken,
+                    onPick = { surname, name, cls ->
+                        onAction(BatchResultsAction.AssignStudent(idx, surname, name, cls))
+                        assignIndex = null
+                    },
+                    onDismiss = { assignIndex = null },
+                )
+            }
+        }
+
         ScreenContentColumn(padding = padding, verticalScroll = true) {
-            state.summary?.let { BatchResultsSummaryBlock(it) }
+            state.summary?.let { BatchResultsSummaryBlock(it, notRecognized = state.resultEntries.count { e -> e.grade == null }) }
 
-            SettingsShellCard {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    state.resultEntries.forEachIndexed { index, entry ->
-                        key(index) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(EntryCardShape)
-                                    .background(FrostedEntryBg)
-                                    .border(1.dp, FrostedEntryBorder, EntryCardShape)
-                                    .heightIn(min = 168.dp)
-                                    .padding(10.dp),
-                                verticalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Row(
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    Spacer(
-                                        modifier = Modifier
-                                            .width(4.dp)
-                                            .heightIn(min = 72.dp)
-                                            .background(statusAccentColor(entry.status), RoundedCornerShape(8.dp)),
-                                    )
-                                    if (entry.previewBitmap != null) {
-                                        Image(
-                                            bitmap = entry.previewBitmap.asImageBitmap(),
-                                            contentDescription = "Миниатюра работы",
-                                            modifier = Modifier.size(72.dp),
-                                            contentScale = ContentScale.Crop,
-                                        )
-                                    } else {
-                                        Text(
-                                            text = "Без превью",
-                                            style = MaterialTheme.typography.bodySmall,
-                                            modifier = Modifier.size(72.dp),
-                                        )
-                                    }
-                                    Column(
-                                        modifier = Modifier.weight(1f),
-                                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                                    ) {
-                                        Text(entry.title, style = MaterialTheme.typography.titleSmall)
-                                        val sub = entry.subtitle?.trim().orEmpty()
-                                        if (sub.isNotEmpty() && normalizeWorkCardSubtitle(sub) != normalizeWorkCardSubtitle(entry.title)) {
-                                            Text(
-                                                sub,
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            )
-                                        }
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                        ) {
-                                            StatusIcon(entry.status)
-                                            StatusBadge(entry.status)
-                                        }
-                                    }
-                                }
-
-                                EntryGradeScoreBlock(entry)
-                                CorrectionsSummaryLine(entry)
-                                entry.layoutLine?.let {
-                                    Text(
-                                        it,
-                                        style = MaterialTheme.typography.bodySmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-
-                                Row(
-                                    modifier = Modifier.fillMaxWidth(),
-                                    horizontalArrangement = Arrangement.spacedBy(10.dp, Alignment.End),
-                                    verticalAlignment = Alignment.CenterVertically,
-                                ) {
-                                    val canExport = entry.canExportToReports()
-                                    val alreadyInReports = index in state.exportedToReportsIndices
-                                    val sentToReports = canExport && alreadyInReports
-                                    val sendIx = remember(index, "send") { MutableInteractionSource() }
-                                    val detailIx = remember(index, "detail") { MutableInteractionSource() }
-                                    val sendPal = when {
-                                        sentToReports -> mainMenuBubbleGradient(1)
-                                        !canExport -> mainMenuBubbleGradient(4)
-                                        else -> mainMenuBubbleGradient(2)
-                                    }
-                                    val detailPal = mainMenuBubbleGradient(0)
-                                    RealtimeBubbleIconButton(
-                                        onClick = { onAction(BatchResultsAction.SendWorkToReports(index)) },
-                                        contentDescription = when {
-                                            sentToReports -> state.inReportsButtonText
-                                            !canExport -> "Недоступно для отчёта"
-                                            else -> state.sendToReportsButtonText
-                                        },
-                                        topColor = sendPal.first,
-                                        bottomColor = sendPal.second,
-                                        size = 52.dp,
-                                        enabled = canExport && !alreadyInReports,
-                                        interactionSource = sendIx,
-                                    ) {
-                                        Icon(
-                                            imageVector = if (sentToReports) {
-                                                Icons.Filled.CheckCircle
-                                            } else {
-                                                Icons.AutoMirrored.Filled.SendToMobile
-                                            },
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(26.dp),
-                                        )
-                                    }
-                                    RealtimeBubbleIconButton(
-                                        onClick = { detailsIndex = index },
-                                        contentDescription = "Подробнее",
-                                        topColor = detailPal.first,
-                                        bottomColor = detailPal.second,
-                                        size = 52.dp,
-                                        interactionSource = detailIx,
-                                    ) {
-                                        Icon(
-                                            imageVector = Icons.Filled.Visibility,
-                                            contentDescription = null,
-                                            tint = Color.White,
-                                            modifier = Modifier.size(26.dp),
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
+            // Каждая работа — отдельный листок: фамилия, результат и оценка «красной ручкой».
+            // Нажатие на листок открывает разбор; работы, где нужна проверка учителя, помечены.
+            state.resultEntries.forEachIndexed { index, entry ->
+                key(index) {
+                    ResultWorkCard(
+                        index = index,
+                        entry = entry,
+                        canExport = entry.canExportToReports(),
+                        sentToReports = index in state.exportedToReportsIndices,
+                        sendText = state.sendToReportsButtonText,
+                        sentText = state.inReportsButtonText,
+                        onOpen = { detailsIndex = index },
+                        onSend = { onAction(BatchResultsAction.SendWorkToReports(index)) },
+                        onAssign = { assignIndex = index },
+                        onUnsend = { onAction(BatchResultsAction.RemoveWorkFromReports(index)) },
+                    )
                 }
             }
 
@@ -286,8 +214,10 @@ fun BatchResultsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
+                                val total = state.resultEntries.size
+                                val cur = detailsIndex ?: 0
                                 Text(
-                                    "Результат проверки",
+                                    "Работа ${cur + 1} из $total",
                                     style = MaterialTheme.typography.titleMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     modifier = Modifier.weight(1f),
@@ -304,24 +234,57 @@ fun BatchResultsScreen(
                                     Icon(
                                         imageVector = Icons.Filled.Close,
                                         contentDescription = null,
-                                        tint = Color.White,
+                                        tint = Scrapbook.Ink,
                                         modifier = Modifier.size(24.dp),
                                     )
                                 }
                             }
                             HorizontalDivider(
                                 modifier = Modifier.padding(vertical = 8.dp),
-                                color = Color.White.copy(alpha = 0.14f),
+                                color = Scrapbook.Ink.copy(alpha = 0.14f),
                             )
                             Column(
                                 verticalArrangement = Arrangement.spacedBy(10.dp),
                                 modifier = Modifier
                                     .fillMaxWidth()
-                                    .heightIn(max = 520.dp)
+                                    .weight(1f, fill = false)
                                     .verticalScroll(dialogScroll),
                             ) {
-                                Text(selected.title, style = MaterialTheme.typography.titleMedium)
+                                LaunchedEffect(detailsIndex) { dialogScroll.scrollTo(0) }
+                                val selName = listOfNotNull(selected.reportStudentSurname, selected.reportStudentName).joinToString(" ").trim()
+                                Text(selName.ifEmpty { selected.title }, style = MaterialTheme.typography.titleMedium)
+                                if (selName.isNotEmpty()) {
+                                    Text(selected.title, style = MaterialTheme.typography.bodySmall, color = Scrapbook.InkMuted)
+                                }
                                 StatusBadge(selected.status)
+                                selected.studentNote?.let { StudentNoteTag(it) }
+                                selected.warning?.let { WarningNote(it) }
+                                if (selected.grade != null) {
+                                    if (selected.nameCropPath != null) {
+                                        NameCropImage(selected.nameCropPath, Modifier.fillMaxWidth().height(40.dp))
+                                    }
+                                    val idx = detailsIndex ?: 0
+                                    val inReport = idx in state.exportedToReportsIndices
+                                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        DialogChip(
+                                            text = if (selName.isEmpty()) "Чья работа?" else "✎ выбрать ученика",
+                                            background = if (selName.isEmpty()) Scrapbook.Lavender else Color.Transparent,
+                                            onClick = { assignIndex = idx },
+                                        )
+                                        if (selected.canExportToReports()) {
+                                            DialogChip(
+                                                text = if (inReport) "В отчёте ✓ · убрать" else state.sendToReportsButtonText,
+                                                background = if (inReport) Color.Transparent else Scrapbook.Mint,
+                                                onClick = {
+                                                    onAction(
+                                                        if (inReport) BatchResultsAction.RemoveWorkFromReports(idx)
+                                                        else BatchResultsAction.SendWorkToReports(idx),
+                                                    )
+                                                },
+                                            )
+                                        }
+                                    }
+                                }
 
                                 SettingsShellCard {
                                     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -366,19 +329,25 @@ fun BatchResultsScreen(
                                                         Icons.Filled.Visibility
                                                     },
                                                     contentDescription = null,
-                                                    tint = Color.White,
+                                                    tint = Scrapbook.Ink,
                                                     modifier = Modifier.size(24.dp),
                                                 )
                                             }
                                         }
+                                        // Полный кадр бланка читается с диска в фоне только для открытой работы.
+                                        val fullSheet by produceState<Bitmap?>(null, selected.sheetImagePath) {
+                                            value = withContext(Dispatchers.IO) {
+                                                BatchLastRunStore.loadSheetBitmap(selected.sheetImagePath)
+                                            }
+                                        }
                                         val sheetWithMarkers = remember(
                                             showMarkers,
-                                            selected.previewBitmap,
+                                            fullSheet,
                                             selected.sheetMarkerConfig,
                                             selected.sheetMarkerPredictions,
                                             selected.sheetMarkerColumnFrames,
                                         ) {
-                                            val base = selected.previewBitmap ?: return@remember null
+                                            val base = fullSheet ?: return@remember null
                                             val cfg = selected.sheetMarkerConfig
                                             val preds = selected.sheetMarkerPredictions
                                             if (!showMarkers || cfg == null || preds.isEmpty()) {
@@ -399,7 +368,7 @@ fun BatchResultsScreen(
                                                 modifier = Modifier.fillMaxWidth(),
                                             )
                                         } ?: Text(
-                                            "Изображение недоступно",
+                                            if (selected.sheetImagePath != null) "Загрузка бланка…" else "Изображение недоступно",
                                             style = MaterialTheme.typography.bodySmall,
                                         )
                                     }
@@ -425,6 +394,30 @@ fun BatchResultsScreen(
                                     }
                                 }
                             }
+                            // Листание без закрытия окна: предыдущая / следующая работа.
+                            val cur = detailsIndex ?: 0
+                            val last = state.resultEntries.lastIndex
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(top = 8.dp),
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                ShellBubblePrimaryButton(
+                                    text = "‹ Предыдущая",
+                                    onClick = { detailsIndex = (cur - 1).coerceAtLeast(0) },
+                                    enabled = cur > 0,
+                                    paletteIndex = 4,
+                                    modifier = Modifier.weight(1f),
+                                )
+                                ShellBubblePrimaryButton(
+                                    text = "Следующая ›",
+                                    onClick = { detailsIndex = (cur + 1).coerceAtMost(last) },
+                                    enabled = cur < last,
+                                    paletteIndex = 1,
+                                    modifier = Modifier.weight(1f),
+                                )
+                            }
                         }
                     }
                 }
@@ -434,48 +427,49 @@ fun BatchResultsScreen(
 }
 
 @Composable
-private fun BatchResultsSummaryBlock(summary: BatchResultsSummary) {
-    SettingsShellCard {
-        Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+private fun BatchResultsSummaryBlock(summary: BatchResultsSummary, notRecognized: Int = 0) {
+    // Сводка как записка учителя: сколько работ и сколько каких оценок.
+    SettingsShellCard(paper = Scrapbook.Lemon) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
-                "Итоги проверки",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.SemiBold,
+                text = "Проверено работ: ${summary.totalWorks}",
+                style = MaterialTheme.typography.headlineSmall,
+                color = Scrapbook.Ink,
             )
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SummaryStatPill("Всего работ", summary.totalWorks, Modifier.weight(1f))
-                SummaryStatPill("Пятерок", summary.countGrade5, Modifier.weight(1f))
-                SummaryStatPill("Четверок", summary.countGrade4, Modifier.weight(1f))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                SummaryGradeCell(5, summary.countGrade5, Modifier.weight(1f))
+                SummaryGradeCell(4, summary.countGrade4, Modifier.weight(1f))
+                SummaryGradeCell(3, summary.countGrade3, Modifier.weight(1f))
+                SummaryGradeCell(2, summary.countGrade2, Modifier.weight(1f))
             }
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                SummaryStatPill("Троек", summary.countGrade3, Modifier.weight(1f))
-                SummaryStatPill("Двоек", summary.countGrade2, Modifier.weight(1f))
-                Spacer(modifier = Modifier.weight(1f))
+            if (notRecognized > 0) {
+                Text(
+                    text = "Не узнано бланков: $notRecognized — переснимите их ровнее, чтобы сетка была видна целиком",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Scrapbook.AccentInk,
+                )
             }
         }
     }
 }
 
 @Composable
-private fun SummaryStatPill(label: String, value: Int, modifier: Modifier = Modifier) {
-    Surface(
+private fun SummaryGradeCell(grade: Int, count: Int, modifier: Modifier = Modifier) {
+    Row(
         modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = Color.White.copy(alpha = 0.10f),
+        horizontalArrangement = Arrangement.Center,
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp)) {
-            Text(
-                label,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Text(
-                value.toString(),
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-        }
+        Text(
+            text = grade.toString(),
+            style = MaterialTheme.typography.displaySmall,
+            color = gradeTextColor(grade).copy(alpha = if (count > 0) 1f else 0.4f),
+        )
+        Text(
+            text = " × $count",
+            style = MaterialTheme.typography.titleMedium,
+            color = Scrapbook.Ink.copy(alpha = if (count > 0) 1f else 0.4f),
+        )
     }
 }
 
@@ -520,7 +514,11 @@ private fun EntryGradeScoreBlock(entry: BatchResultEntryState) {
 private fun CorrectionsSummaryLine(entry: BatchResultEntryState) {
     if (entry.correctionsTotal <= 0) return
     Text(
-        text = "Исправления: ${entry.correctionsTotal}",
+        text = if (entry.correctionsAuto > 0) {
+            "Исправления: ${entry.correctionsTotal} · ✎ решено автоматически: ${entry.correctionsAuto}"
+        } else {
+            "Исправления: ${entry.correctionsTotal}"
+        },
         style = MaterialTheme.typography.bodySmall,
         color = MaterialTheme.colorScheme.onSurfaceVariant,
     )
@@ -556,7 +554,7 @@ private fun WorkFixedActionsBlock(
             key(fixed.key) {
             Surface(
                 shape = RoundedCornerShape(10.dp),
-                color = Color.White.copy(alpha = 0.08f),
+                color = Scrapbook.Ink.copy(alpha = 0.08f),
             ) {
                 Column(
                     modifier = Modifier.padding(8.dp),
@@ -567,11 +565,20 @@ private fun WorkFixedActionsBlock(
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                    Text(
-                        "Как засчитать эту отметку?",
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
+                    if (fixed.autoDecided) {
+                        Text(
+                            "✎ Решено автоматически: «Пусто» — кружок зачёркнут, а в этом вопросе закрашен другой. " +
+                                "Если это не так, выберите сами.",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    } else {
+                        Text(
+                            "Как засчитать эту отметку?",
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(10.dp),
                         modifier = Modifier.fillMaxWidth(),
@@ -592,7 +599,7 @@ private fun WorkFixedActionsBlock(
                             Icon(
                                 imageVector = Icons.Filled.Check,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = Scrapbook.Ink,
                                 modifier = Modifier.size(26.dp),
                             )
                         }
@@ -607,7 +614,7 @@ private fun WorkFixedActionsBlock(
                             Icon(
                                 imageVector = Icons.Filled.Block,
                                 contentDescription = null,
-                                tint = Color.White,
+                                tint = Scrapbook.Ink,
                                 modifier = Modifier.size(26.dp),
                             )
                         }
@@ -622,7 +629,7 @@ private fun WorkFixedActionsBlock(
 @Composable
 private fun ErrorDetailsBlock(entry: BatchResultEntryState) {
     if (entry.questionWrongTotal == 0) {
-        Surface(shape = RoundedCornerShape(10.dp), color = Color.White.copy(alpha = 0.10f)) {
+        Surface(shape = RoundedCornerShape(10.dp), color = Scrapbook.Ink.copy(alpha = 0.10f)) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -659,7 +666,7 @@ private fun QuestionErrorRow(row: BatchResultDetailRow) {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color.White.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
+            .background(Scrapbook.Ink.copy(alpha = 0.10f), RoundedCornerShape(10.dp))
             .padding(10.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
@@ -670,7 +677,7 @@ private fun QuestionErrorRow(row: BatchResultDetailRow) {
             color = MaterialTheme.colorScheme.onSurface,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(8.dp), color = Color.White.copy(alpha = 0.12f)) {
+            Surface(shape = RoundedCornerShape(8.dp), color = Scrapbook.Ink.copy(alpha = 0.12f)) {
                 Text(
                     "Выбрано: ${row.selectedText}",
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -678,7 +685,7 @@ private fun QuestionErrorRow(row: BatchResultDetailRow) {
                     color = MaterialTheme.colorScheme.onSurface,
                 )
             }
-            Surface(shape = RoundedCornerShape(8.dp), color = Color.White.copy(alpha = 0.12f)) {
+            Surface(shape = RoundedCornerShape(8.dp), color = Scrapbook.Ink.copy(alpha = 0.12f)) {
                 Text(
                     "Верно: ${row.expectedText}",
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -733,16 +740,279 @@ private fun statusAccentColor(status: String): Color {
 }
 
 private fun gradeTextColor(grade: Int): Color = when (grade) {
-    5 -> Color(0xFF79A985)
-    4 -> Color(0xFF7A99C2)
-    3 -> Color(0xFFC1A56E)
-    2 -> Color(0xFFC17B7B)
-    else -> Color(0xFFB86F6F)
+    5 -> Color(0xFF2E8B57)
+    4 -> Color(0xFF2F6DB5)
+    3 -> Color(0xFFC77A12)
+    2 -> Color(0xFFC0392B)
+    else -> Color(0xFFC0392B)
 }
 
 private fun percentTextColor(percent: Float): Color = when {
-    percent < 50f -> Color(0xFFC17B7B)
-    percent < 70f -> Color(0xFFC1A56E)
-    percent < 90f -> Color(0xFF7A99C2)
-    else -> Color(0xFF79A985)
+    percent < 50f -> Color(0xFFC0392B)
+    percent < 70f -> Color(0xFFC77A12)
+    percent < 90f -> Color(0xFF2F6DB5)
+    else -> Color(0xFF2E8B57)
+}
+
+@Composable
+private fun ResultWorkCard(
+    index: Int,
+    entry: BatchResultEntryState,
+    canExport: Boolean,
+    sentToReports: Boolean,
+    sendText: String,
+    sentText: String,
+    onOpen: () -> Unit,
+    onSend: () -> Unit,
+    onAssign: () -> Unit = {},
+    onUnsend: () -> Unit = {},
+) {
+    val studentName = listOfNotNull(entry.reportStudentSurname, entry.reportStudentName)
+        .joinToString(" ").trim()
+    val failed = entry.grade == null
+    val needsReview = entry.correctionsUnresolved > 0
+    val meta = buildString {
+        if (studentName.isNotEmpty()) append(entry.title)
+        entry.reportVariant?.let {
+            if (isNotEmpty()) append(" · ")
+            append("вариант ").append(it)
+        }
+    }
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .rotate(if (index % 2 == 0) -0.4f else 0.35f)
+            .stickerShadow(offset = 3.dp, cornerRadius = 3.dp)
+            .clip(RoundedCornerShape(3.dp))
+            .background(if (failed) Scrapbook.Rose.copy(alpha = 0.35f).compositeOver(Scrapbook.Paper) else Scrapbook.Paper)
+            .clickable(onClick = onOpen)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val thumb = entry.previewBitmap
+        if (thumb != null) {
+            Image(
+                bitmap = thumb.asImageBitmap(),
+                contentDescription = null,
+                modifier = Modifier
+                    .size(width = 50.dp, height = 78.dp)
+                    .border(1.dp, Scrapbook.Ink.copy(alpha = 0.25f)),
+                contentScale = ContentScale.Crop,
+            )
+        } else {
+            Box(
+                modifier = Modifier
+                    .size(width = 50.dp, height = 78.dp)
+                    .border(1.dp, Scrapbook.Ink.copy(alpha = 0.25f)),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text("?", style = MaterialTheme.typography.headlineSmall, color = Scrapbook.InkMuted)
+            }
+        }
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            Text(
+                text = studentName.ifEmpty { entry.title },
+                style = MaterialTheme.typography.titleMedium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (meta.isNotEmpty()) {
+                Text(meta, style = MaterialTheme.typography.bodySmall, color = Scrapbook.InkMuted, maxLines = 1)
+            }
+            entry.studentNote?.let { StudentNoteTag(it) }
+            entry.warning?.let { WarningNote(it) }
+            // Подпись с бланка показываем всегда: распознавание почерка может ошибиться,
+            // учитель сверяет глазами и при необходимости выбирает ученика из журнала.
+            // Ученик по коду с именного бланка — без сомнений, кнопку «не тот?» не показываем.
+            if (!failed && entry.studentNote == null && (studentName.isEmpty() || entry.nameAssignedManually || entry.nameCropPath != null)) {
+                if (entry.nameCropPath != null) {
+                    NameCropImage(entry.nameCropPath, Modifier.fillMaxWidth().height(34.dp))
+                }
+                Text(
+                    text = if (studentName.isEmpty()) "Чья работа?" else "✎ не тот? выбрать ученика",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = Scrapbook.Ink,
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(if (studentName.isEmpty()) Scrapbook.Lavender else Color.Transparent)
+                        .border(1.5.dp, Scrapbook.Ink.copy(alpha = if (studentName.isEmpty()) 1f else 0.3f), RoundedCornerShape(6.dp))
+                        .clickable(onClick = onAssign)
+                        .padding(horizontal = 10.dp, vertical = 4.dp),
+                )
+            }
+            if (failed) {
+                Text(
+                    text = entry.scoreLine?.takeIf { it.isNotBlank() } ?: "Бланк не узнан — переснимите",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Scrapbook.AccentInk,
+                    maxLines = 2,
+                )
+            } else {
+                Text(
+                    text = "Верно ${entry.scoreCorrect ?: 0} из ${entry.scoreTotal ?: 0} · ${"%.0f".format(entry.percent ?: 0f)}%",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (needsReview) {
+                    Text(
+                        text = "Проверьте: ${entry.correctionsUnresolved}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Scrapbook.Ink,
+                        modifier = Modifier
+                            .background(Scrapbook.Lemon, RoundedCornerShape(6.dp))
+                            .border(1.5.dp, Scrapbook.Ink, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
+                if (canExport) {
+                    Text(
+                        text = if (sentToReports) "$sentText ✓ · убрать" else sendText,
+                        style = MaterialTheme.typography.labelMedium,
+                        color = if (sentToReports) Scrapbook.InkMuted else Scrapbook.Ink,
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(6.dp))
+                            .background(if (sentToReports) Color.Transparent else Scrapbook.Mint)
+                            .border(1.5.dp, Scrapbook.Ink.copy(alpha = if (sentToReports) 0.3f else 1f), RoundedCornerShape(6.dp))
+                            .clickable(onClick = if (sentToReports) onUnsend else onSend)
+                            .padding(horizontal = 10.dp, vertical = 4.dp),
+                    )
+                }
+            }
+        }
+        GradeMark(entry.grade)
+    }
+}
+
+/** Оценка как пометка учителя: крупная рукописная цифра в кружке. */
+@Composable
+private fun GradeMark(grade: Int?) {
+    val color = if (grade != null) gradeTextColor(grade) else Scrapbook.InkMuted
+    Box(
+        modifier = Modifier
+            .size(60.dp)
+            .rotate(-6f)
+            .border(3.dp, color, CircleShape),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            text = grade?.toString() ?: "—",
+            style = MaterialTheme.typography.displaySmall,
+            color = color,
+        )
+    }
+}
+
+@Composable
+private fun DialogChip(text: String, background: Color, onClick: () -> Unit) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelLarge,
+        color = Scrapbook.Ink,
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .background(background)
+            .border(1.5.dp, Scrapbook.Ink, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+    )
+}
+
+/** «Такая работа уже есть»: два бланка рядом и выбор, какую работу оставить в отчёте. */
+@Composable
+private fun DuplicateWorkDialog(p: BatchDuplicatePrompt, onAction: (BatchResultsAction) -> Unit) {
+    Dialog(
+        onDismissRequest = { onAction(BatchResultsAction.DuplicateKeepExisting) },
+        properties = DialogProperties(usePlatformDefaultWidth = false),
+    ) {
+        SettingsShellCard(modifier = Modifier.fillMaxWidth(0.92f)) {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+                modifier = Modifier.verticalScroll(rememberScrollState()),
+            ) {
+                Text("Такая работа уже есть", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+                Text(
+                    buildString {
+                        append("В отчёте «").append(p.reportTitle).append("» уже есть ")
+                        if (p.sameStudentByName) append("работа ученика ").append(p.studentLabel).append(". ")
+                        else append("такой же бланк. ")
+                        if (p.differingQuestions.isEmpty()) append("Ответы совпадают во всех вопросах — похоже, бланк сфотографирован ещё раз.")
+                        else append("Ответы различаются в вопросах: ").append(p.differingQuestions.joinToString(", ")).append('.')
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), modifier = Modifier.fillMaxWidth()) {
+                    DuplicateSide("В отчёте", p.existingTitle, p.existingSheetPath, p.existingGrade, p.existingPercent, Modifier.weight(1f))
+                    DuplicateSide("Новая", p.newTitle, p.newSheetPath, p.newGrade, p.newPercent, Modifier.weight(1f))
+                }
+                ShellBubblePrimaryButton(text = "Оставить прежнюю", onClick = { onAction(BatchResultsAction.DuplicateKeepExisting) }, paletteIndex = 1)
+                ShellBubblePrimaryButton(text = "Заменить новой", onClick = { onAction(BatchResultsAction.DuplicateReplace) }, paletteIndex = 3)
+                ShellBubblePrimaryButton(text = "Это другой ученик — выбрать", onClick = { onAction(BatchResultsAction.DuplicateOtherStudent) }, paletteIndex = 4)
+                if (p.remaining > 0) {
+                    Text("Ещё повторов: ${p.remaining}", style = MaterialTheme.typography.bodySmall, color = Scrapbook.InkMuted)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DuplicateSide(label: String, title: String, sheetPath: String?, grade: Int, percent: Float, modifier: Modifier) {
+    val bmp by produceState<Bitmap?>(null, sheetPath) {
+        value = withContext(Dispatchers.IO) { BatchLastRunStore.loadSheetBitmap(sheetPath) }
+    }
+    Column(
+        modifier = modifier
+            .border(1.5.dp, Scrapbook.Ink, RoundedCornerShape(10.dp))
+            .padding(8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = Scrapbook.InkMuted)
+        Box(Modifier.fillMaxWidth().height(150.dp), contentAlignment = Alignment.Center) {
+            val b = bmp
+            if (b != null) {
+                Image(b.asImageBitmap(), contentDescription = label, contentScale = ContentScale.Fit, modifier = Modifier.fillMaxSize())
+            } else {
+                Text(title, style = MaterialTheme.typography.bodySmall, color = Scrapbook.InkMuted)
+            }
+        }
+        Text("«$grade» · ${"%.0f".format(percent)}%", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+/** «7 И · по коду №2» — ученик подставлен по коду с именного бланка. */
+@Composable
+private fun StudentNoteTag(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelMedium,
+        color = Color(0xFF085041),
+        modifier = Modifier
+            .clip(RoundedCornerShape(6.dp))
+            .background(Color(0xFFDDF3E9))
+            .padding(horizontal = 8.dp, vertical = 2.dp),
+    )
+}
+
+/** Что не сходится: вариант не тот, что выдан ученику, или код не выдавался по тесту. */
+@Composable
+private fun WarningNote(text: String) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.bodySmall,
+        color = Scrapbook.Ink,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(6.dp))
+            .background(Scrapbook.Rose.copy(alpha = 0.45f))
+            .padding(horizontal = 8.dp, vertical = 5.dp),
+    )
 }

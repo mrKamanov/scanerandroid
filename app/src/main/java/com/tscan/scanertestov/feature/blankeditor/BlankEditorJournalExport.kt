@@ -57,6 +57,8 @@ internal fun buildJournalExportSnapshot(
     variantMode: BlankJournalVariantExportMode,
     singleVariantText: String,
     cycleVariantMax: Int,
+    /** Шапка бланка v2 (без данных ученика) или null — старый формат. */
+    v2Base: BlankV2Options? = null,
 ): BlankSheetExportSnapshot {
     val (effVariantPrinted, effVariantNum) = when {
         !variantMarkerEnabled -> false to ""
@@ -98,6 +100,13 @@ internal fun buildJournalExportSnapshot(
         studentNameText = nam,
         variantPrintedMode = effVariantPrinted,
         variantPrintedNumber = effVariantNum.ifBlank { "1" },
+        v2 = v2Base?.copy(
+            printedVariant = if (effVariantPrinted) effVariantNum.toIntOrNull()?.coerceIn(1, 4) else null,
+            // Номер ученика по порядку в классе (1–63) — квадратами кода.
+            studentCode = if (student != null) (studentIndex + 1).takeIf { it in 1..63 } else null,
+            printedSurname = if (studentNameMarkerEnabled && namePrintedEff) sur else null,
+            printedName = if (studentNameMarkerEnabled && namePrintedEff) nam else null,
+        ),
     )
 }
 
