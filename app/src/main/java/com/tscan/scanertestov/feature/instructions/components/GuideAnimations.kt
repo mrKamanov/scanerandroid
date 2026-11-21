@@ -13,6 +13,7 @@ import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -376,4 +377,139 @@ internal fun DrawScope.drawExcelImport(t: Float, m: TextMeasurer) {
     }
     val done = seg(t, 0.82f, 0.88f) * reset
     label(m, "Импорт: добавлено 3", j.x + 64f, j.y + 112f, 8.5f, Green, bold = true, center = true, alpha = done)
+}
+
+// ---------- Несколько бланков на листе ----------
+
+internal const val TILE_H = 210f
+
+/** Маленький бланк: рамка с метками и сеткой кружков, повёрнутый на [rot] градусов. */
+private fun DrawScope.tinyBlank(c: Offset, w: Float, h: Float, rot: Float, alpha: Float, filled: Boolean = false) {
+    if (alpha <= 0f) return
+    rotate(rot, pivot = c) {
+        val tl = Offset(c.x - w / 2, c.y - h / 2)
+        drawRect(Paper, tl, Size(w, h), alpha = alpha)
+        val ms = w * 0.09f
+        listOf(Offset(tl.x + ms, tl.y + h * 0.24f), Offset(tl.x + w - ms, tl.y + h * 0.24f), Offset(tl.x + ms, tl.y + h - ms), Offset(tl.x + w - ms, tl.y + h - ms))
+            .forEach { drawRect(Ink, Offset(it.x - ms / 2, it.y - ms / 2), Size(ms, ms), alpha = alpha) }
+        drawLine(Muted, Offset(tl.x + w * 0.15f, tl.y + h * 0.09f), Offset(tl.x + w * 0.6f, tl.y + h * 0.09f), 1.5f, alpha = alpha)
+        val gx0 = tl.x + w * 0.22f
+        val gx1 = tl.x + w * 0.78f
+        val gy0 = tl.y + h * 0.36f
+        val gy1 = tl.y + h * 0.88f
+        drawRect(Ink, Offset(gx0 - 3f, gy0 - 4f), Size(gx1 - gx0 + 6f, gy1 - gy0 + 8f), style = Stroke(1.4f), alpha = alpha)
+        val rows = 5
+        val cols = 4
+        val r = minOf((gx1 - gx0) / cols, (gy1 - gy0) / rows) * 0.32f
+        for (i in 0 until rows) for (j in 0 until cols) {
+            val p = Offset(gx0 + (gx1 - gx0) * (j + 0.5f) / cols, gy0 + (gy1 - gy0) * (i + 0.5f) / rows)
+            drawCircle(Ink, r, p, style = Stroke(0.9f), alpha = alpha)
+            if (filled && (i * 3 + j) % 4 == 0) drawCircle(Pen, r * 0.8f, p, alpha = alpha)
+        }
+    }
+}
+
+internal fun DrawScope.drawTiling(t: Float, m: TextMeasurer) {
+    desk(TILE_H)
+    val reset = 1f - seg(t, 0.94f, 0.99f)
+    val pw = 118f
+    val ph = 167f
+    val sheet = Offset(GW / 2 - pw / 2 - 60f, 20f)
+    drawRect(Color(0x22000000), Offset(sheet.x + 3f, sheet.y + 3f), Size(pw, ph))
+    drawRect(Paper, sheet, Size(pw, ph))
+    val c = Offset(sheet.x + pw / 2, sheet.y + ph / 2)
+    // 1 — один бланк во весь лист
+    val a1 = 1f - seg(t, 0.20f, 0.26f)
+    tinyBlank(c, pw * 0.86f, ph * 0.9f, 0f, a1 * reset)
+    // 2 — два бланка на боку
+    val a2 = seg(t, 0.24f, 0.30f) * (1f - seg(t, 0.46f, 0.52f))
+    for (k in 0..1) tinyBlank(Offset(c.x, sheet.y + ph * (0.25f + 0.5f * k)), ph * 0.44f, pw * 0.82f, -90f, a2 * reset)
+    // 3 — четыре бланка, ответы закрашены
+    val a3 = seg(t, 0.50f, 0.56f)
+    for (k in 0..3) {
+        tinyBlank(
+            Offset(sheet.x + pw * (0.25f + 0.5f * (k % 2)), sheet.y + ph * (0.25f + 0.5f * (k / 2))),
+            pw * 0.44f, ph * 0.44f, 0f, a3 * reset, filled = true,
+        )
+    }
+    // пунктир для разрезания
+    val cut = seg(t, 0.58f, 0.68f) * reset
+    if (cut > 0f) {
+        val dash = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(5f, 4f))
+        drawLine(Muted, Offset(sheet.x + 4f, c.y), Offset(sheet.x + 4f + (pw - 8f) * cut, c.y), 1.4f, pathEffect = dash)
+        drawLine(Muted, Offset(c.x, sheet.y + 4f), Offset(c.x, sheet.y + 4f + (ph - 8f) * cut), 1.4f, pathEffect = dash)
+    }
+    // ножницы идут по пунктиру
+    val sc = seg(t, 0.68f, 0.80f) * reset
+    if (sc > 0f && sc < 1f) {
+        val p = Offset(sheet.x + pw * sc, c.y)
+        drawCircle(Red, 4f, Offset(p.x - 6f, p.y - 5f), style = Stroke(1.8f))
+        drawCircle(Red, 4f, Offset(p.x - 6f, p.y + 5f), style = Stroke(1.8f))
+        drawLine(Red, Offset(p.x - 3f, p.y - 3f), Offset(p.x + 8f, p.y + 3f), 2f, StrokeCap.Round)
+        drawLine(Red, Offset(p.x - 3f, p.y + 3f), Offset(p.x + 8f, p.y - 3f), 2f, StrokeCap.Round)
+    }
+    val tx = sheet.x + pw + 18f
+    label(m, "1 на листе", tx, 40f, 10f, Ink, bold = true, alpha = a1 * reset)
+    label(m, "кружок 10 мм", tx, 56f, 9f, Green, alpha = a1 * reset)
+    label(m, "2 на листе — на боку", tx, 40f, 10f, Ink, bold = true, alpha = a2 * reset)
+    label(m, "кружок 7–8 мм", tx, 56f, 9f, Green, alpha = a2 * reset)
+    label(m, "4 на листе", tx, 40f, 10f, Ink, bold = true, alpha = a3 * reset)
+    label(m, "кружок 5 мм — аккуратнее", tx, 56f, 9f, Color(0xFFB7791F), alpha = a3 * reset)
+    label(m, "режьте по пунктиру", tx, 92f, 9.5f, Muted, alpha = cut)
+    val each = seg(t, 0.80f, 0.86f) * reset
+    label(m, "снимайте каждый", tx, 120f, 9.5f, Ink, alpha = each)
+    label(m, "бланк отдельно", tx, 134f, 9.5f, Ink, alpha = each)
+}
+
+// ---------- Бланк в своём документе Word ----------
+
+internal const val WORD_H = 210f
+
+internal fun DrawScope.drawWordInsert(t: Float, m: TextMeasurer) {
+    desk(WORD_H)
+    val reset = 1f - seg(t, 0.94f, 0.99f)
+    val dw = 196f
+    val dh = 190f
+    val doc = Offset(12f, 10f)
+    val word = Color(0xFF2B579A)
+    drawRect(word, doc, Size(dw, 14f))
+    label(m, "Контрольная.docx", doc.x + 8f, doc.y + 7f, 8f, Color.White, bold = true)
+    drawRect(Paper, Offset(doc.x, doc.y + 14f), Size(dw, dh - 14f))
+    for (i in 0 until 4) {
+        val y = doc.y + 30f + i * 13f
+        drawLine(Muted, Offset(doc.x + 12f, y), Offset(doc.x + 12f + if (i % 2 == 0) 150f else 110f, y), 2f, alpha = 0.8f)
+    }
+    // картинка бланка появляется, растягивается за угол, потом (ошибка) сжимается и возвращается
+    val drop = ease(seg(t, 0.08f, 0.24f))
+    val grow = ease(seg(t, 0.34f, 0.56f))
+    val shrink = ease(seg(t, 0.62f, 0.72f)) * (1f - ease(seg(t, 0.80f, 0.88f)))
+    val bw = 54f + 46f * grow - 34f * shrink
+    val bh = bw * 1.05f
+    val bx = doc.x + 12f
+    val by = doc.y + 80f + (1f - drop) * 50f
+    val a = seg(t, 0.08f, 0.16f) * reset
+    if (a > 0f) {
+        tinyBlank(Offset(bx + bw / 2, by + bh / 2), bw, bh, 0f, a)
+        val sel = seg(t, 0.26f, 0.32f) * (1f - seg(t, 0.88f, 0.92f)) * reset
+        if (sel > 0f) {
+            drawRect(word, Offset(bx, by), Size(bw, bh), style = Stroke(1.2f), alpha = sel)
+            drawCircle(Paper, 4f, Offset(bx + bw, by + bh), alpha = sel)
+            drawCircle(word, 4f, Offset(bx + bw, by + bh), style = Stroke(1.4f), alpha = sel)
+            val hand = Offset(bx + bw + 5f, by + bh + 5f)
+            val arrow = Path().apply { moveTo(hand.x, hand.y); lineTo(hand.x + 10f, hand.y + 3f); lineTo(hand.x + 3f, hand.y + 10f); close() }
+            drawPath(arrow, Ink, alpha = sel)
+        }
+    }
+    val tx = doc.x + dw + 10f
+    label(m, "1. «Картинка", tx, 30f, 9.5f, Ink, bold = true, alpha = seg(t, 0.02f, 0.08f) * reset)
+    label(m, "в документ»", tx, 43f, 9.5f, Ink, bold = true, alpha = seg(t, 0.02f, 0.08f) * reset)
+    label(m, "2. вставьте", tx, 66f, 9.5f, Ink, bold = true, alpha = seg(t, 0.20f, 0.26f) * reset)
+    label(m, "3. тяните", tx, 89f, 9.5f, Ink, bold = true, alpha = seg(t, 0.34f, 0.40f) * reset)
+    label(m, "за угол", tx, 102f, 9.5f, Ink, bold = true, alpha = seg(t, 0.34f, 0.40f) * reset)
+    val small = seg(t, 0.66f, 0.70f) * (1f - seg(t, 0.82f, 0.86f)) * reset
+    label(m, "слишком мелко —", tx, 130f, 9.5f, Red, bold = true, alpha = small)
+    label(m, "ошибки чаще", tx, 143f, 9.5f, Red, bold = true, alpha = small)
+    val ok = seg(t, 0.86f, 0.90f) * reset
+    label(m, "✓ кружок", tx, 130f, 9.5f, Green, bold = true, alpha = ok)
+    label(m, "не мельче 4 мм", tx, 143f, 9.5f, Green, bold = true, alpha = ok)
 }

@@ -259,6 +259,10 @@ fun BatchResultsScreen(
                                 StatusBadge(selected.status)
                                 selected.studentNote?.let { StudentNoteTag(it) }
                                 selected.warning?.let { WarningNote(it) }
+                                if (selected.variantChoices > 1) {
+                                    val vIdx = detailsIndex ?: 0
+                                    VariantPickBlock(selected) { v -> onAction(BatchResultsAction.SetVariant(vIdx, v)) }
+                                }
                                 if (selected.grade != null) {
                                     if (selected.nameCropPath != null) {
                                         NameCropImage(selected.nameCropPath, Modifier.fillMaxWidth().height(40.dp))
@@ -825,6 +829,11 @@ private fun ResultWorkCard(
             }
             entry.studentNote?.let { StudentNoteTag(it) }
             entry.warning?.let { WarningNote(it) }
+            if (entry.variantUnread) {
+                WarningNote("Вариант не прочитан — проверено по ключу варианта 1. Откройте работу и выберите вариант.")
+            } else if (entry.variantManual) {
+                StudentNoteTag("Вариант ${entry.reportVariant} — выбран вручную")
+            }
             // Подпись с бланка показываем всегда: распознавание почерка может ошибиться,
             // учитель сверяет глазами и при необходимости выбирает ученика из журнала.
             // Ученик по коду с именного бланка — без сомнений, кнопку «не тот?» не показываем.
@@ -1015,4 +1024,41 @@ private fun WarningNote(text: String) {
             .background(Scrapbook.Rose.copy(alpha = 0.45f))
             .padding(horizontal = 8.dp, vertical = 5.dp),
     )
+}
+
+/**
+ * Номер варианта на бланке не прочитан: показать, по какому ключу проверено, и дать выбрать вариант.
+ * После выбора работа сразу пересчитывается по ключу выбранного варианта.
+ */
+@Composable
+private fun VariantPickBlock(entry: BatchResultEntryState, onPick: (Int) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (entry.variantUnread) {
+            WarningNote(
+                "Номер варианта на бланке не прочитан: ученик не закрасил кружок варианта или закрасил несколько. " +
+                    "Пока работа проверена по ключу варианта 1 — оценка может быть неверной. Посмотрите на бланк " +
+                    "и выберите вариант, работа сразу перепроверится.",
+            )
+        } else {
+            Text(
+                "Вариант ${entry.reportVariant} выбран вручную — работа проверена по его ключу. Ошиблись — выберите другой.",
+                style = MaterialTheme.typography.bodySmall,
+                color = Scrapbook.InkMuted,
+            )
+        }
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("Вариант:", style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.Bold)
+            (1..entry.variantChoices).forEach { v ->
+                val chosen = entry.variantManual && entry.reportVariant == v
+                DialogChip(
+                    text = if (chosen) "$v ✓" else "$v",
+                    background = if (chosen) Scrapbook.Mint else Color.Transparent,
+                    onClick = { if (!chosen) onPick(v) },
+                )
+            }
+        }
+    }
 }

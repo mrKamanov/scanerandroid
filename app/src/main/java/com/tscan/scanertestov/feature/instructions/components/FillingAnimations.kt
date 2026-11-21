@@ -109,6 +109,7 @@ internal fun FillingAnimation(kind: InstructionAnimation, modifier: Modifier = M
         InstructionAnimation.FillBubble -> 6000
         InstructionAnimation.WrongMarks -> 8000
         InstructionAnimation.LiveCheck, InstructionAnimation.ExcelImport -> 8000
+        InstructionAnimation.Tiling, InstructionAnimation.WordInsert -> 9000
         else -> 7000
     }
     val transition = rememberInfiniteTransition(label = "filling")
@@ -130,6 +131,8 @@ internal fun FillingAnimation(kind: InstructionAnimation, modifier: Modifier = M
             InstructionAnimation.NamedCode -> 0.85f
             InstructionAnimation.VariantSheets -> 0.85f
             InstructionAnimation.ExcelImport -> 0.88f
+            InstructionAnimation.Tiling -> 0.62f
+            InstructionAnimation.WordInsert -> 0.6f
         }
     } else {
         animT
@@ -145,6 +148,8 @@ internal fun FillingAnimation(kind: InstructionAnimation, modifier: Modifier = M
         InstructionAnimation.NamedCode -> "На именном бланке закрашен код ученика, проверка подставляет фамилию и класс"
         InstructionAnimation.VariantSheets -> "Бланки вариантов 1 и 2: с бланка варианта 2 лишние кружки убраны"
         InstructionAnimation.ExcelImport -> "Строки таблицы Excel по одной попадают в журнал по классам"
+        InstructionAnimation.Tiling -> "На листе A4 один бланк, затем два на боку, затем четыре; пунктир показывает, где резать"
+        InstructionAnimation.WordInsert -> "Картинка бланка вставляется в документ с вопросами и растягивается за угол"
     }
     val aspect = when (kind) {
         InstructionAnimation.WrongMarks -> VW / 150f
@@ -153,6 +158,8 @@ internal fun FillingAnimation(kind: InstructionAnimation, modifier: Modifier = M
         InstructionAnimation.NamedCode -> GW / CODE_H
         InstructionAnimation.VariantSheets -> GW / VAR_H
         InstructionAnimation.ExcelImport -> GW / XLS_H
+        InstructionAnimation.Tiling -> GW / TILE_H
+        InstructionAnimation.WordInsert -> GW / WORD_H
         else -> VW / VH
     }
     Canvas(
@@ -173,6 +180,8 @@ internal fun FillingAnimation(kind: InstructionAnimation, modifier: Modifier = M
                 InstructionAnimation.NamedCode -> drawNamedCode(t, measurer)
                 InstructionAnimation.VariantSheets -> drawVariantSheets(t, measurer)
                 InstructionAnimation.ExcelImport -> drawExcelImport(t, measurer)
+                InstructionAnimation.Tiling -> drawTiling(t, measurer)
+                InstructionAnimation.WordInsert -> drawWordInsert(t, measurer)
             }
         }
     }

@@ -28,10 +28,12 @@ private const val CELL_GAP = 14f
 private const val CONTENT_PAD = 6f
 
 /**
- * Самый мелкий кружок, который допускаем на печати: столько же, сколько позволяет сам конструктор
- * (стандартный кружок 30 × минимальный масштаб 0,65). Мельче не делаем, чтобы не терять надёжность проверки.
+ * Самый мелкий кружок на печати — 4 мм (как на бланках ОГЭ/ЕГЭ). Проверено стендом debug/TilingBenchActivity
+ * (21.11.2026): 5–35 вопросов, 1 и 2 колонки, 2/4/6/8 на листе, вырезанные бланки с закрашенными ответами, снимок
+ * хороший и похуже — 188 снимков. От 3,7 мм и крупнее — без единой ошибки; ошибки только у длинных бланков в одну
+ * колонку при 3,6 мм и мельче. Порог 4 мм оставляет запас и для аккуратной закраски учеником.
  */
-private const val MIN_PRINTED_BUBBLE = BlankBubbleDefaults.BUBBLE_SIZE_PX * 0.65f
+private const val MIN_PRINTED_BUBBLE = 4f / 210f * PAGE_W
 
 data class BlankTileOption(
     val perSheet: Int,
@@ -40,6 +42,11 @@ data class BlankTileOption(
     /** Во сколько раз уменьшается бланк (1 — как в конструкторе). */
     val scale: Float,
     val fits: Boolean,
+    /**
+     * Бланк повёрнут на 90° в своей ячейке. Так 2 высоких бланка встают в две половины листа без сильного
+     * уменьшения (каждая половина — как лист A5). Проверка находит бланк по угловым меткам при любом повороте.
+     */
+    val rotated: Boolean = false,
 )
 
 /** Где на листе находится всё напечатанное (рамка, метки, поле имени, надписи), в логических единицах. */
@@ -79,7 +86,7 @@ internal fun blankContentBounds(snapshot: BlankSheetExportSnapshot): RectF {
 private fun printedBubbleSize(snapshot: BlankSheetExportSnapshot): Float =
     snapshot.renderParams.bubbleSizePx * clampBlankScale(snapshot.blankScale)
 
-/** Варианты 1, 2 и 4 бланка на лист; для каждого — лучшая сетка и помещается ли без потери надёжности. */
+/** Варианты 1, 2, 4, 6 и 8 бланков на лист; для каждого — лучшая сетка и помещается ли без потери надёжности. */
 internal fun blankTileOptions(snapshot: BlankSheetExportSnapshot): List<BlankTileOption> =
     blankTileOptions(blankContentBounds(snapshot), printedBubbleSize(snapshot))
 
@@ -88,20 +95,28 @@ internal fun blankTileOptions(content: RectF, bubbleSize: Float): List<BlankTile
         1 to listOf(1 to 1),
         2 to listOf(1 to 2, 2 to 1),
         4 to listOf(2 to 2, 1 to 4, 4 to 1),
+        6 to listOf(2 to 3, 3 to 2),
+        8 to listOf(2 to 4, 4 to 2),
     )
     return grids.map { (n, candidates) ->
-        val best = candidates.map { (cols, rows) ->
+        data class Fit(val cols: Int, val rows: Int, val k: Float, val rotated: Boolean)
+        val best = candidates.flatMap { (cols, rows) ->
             val cellW = (PAGE_W - 2 * PAGE_MARGIN - (cols - 1) * CELL_GAP) / cols
             val cellH = (PAGE_H - 2 * PAGE_MARGIN - (rows - 1) * CELL_GAP) / rows
-            val k = if (n == 1) 1f else minOf(1f, cellW / content.width(), cellH / content.height())
-            Triple(cols, rows, k)
-        }.maxBy { it.third }
+            listOf(false, true).map { rot ->
+                val w = if (rot) content.height() else content.width()
+                val h = if (rot) content.width() else content.height()
+                val k = if (n == 1) 1f else minOf(1f, cellW / w, cellH / h)
+                Fit(cols, rows, k, rot && n > 1)
+            }
+        }.maxBy { it.k + if (it.rotated) 0f else 0.0001f }
         BlankTileOption(
             perSheet = n,
-            cols = best.first,
-            rows = best.second,
-            scale = best.third,
-            fits = n == 1 || bubbleSize * best.third >= MIN_PRINTED_BUBBLE,
+            cols = best.cols,
+            rows = best.rows,
+            scale = best.k,
+            fits = n == 1 || bubbleSize * best.k >= MIN_PRINTED_BUBBLE,
+            rotated = best.rotated,
         )
     }
 }
@@ -121,12 +136,7 @@ fun saveBlankSheetsPdfTiled(
     val content = blankContentBounds(snapshots.first())
     val output = buildExportFile(context, filePrefix, "pdf")
     val pdf = android.graphics.pdf.PdfDocument()
-    val cutPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        strokeWidth = 0.6f
-        color = Color.parseColor("#B8B8B8")
-        pathEffect = DashPathEffect(floatArrayOf(4f, 4f), 0f)
-    }
+    val cutPaint = cutLinePaint()
     try {
         snapshots.chunked(option.perSheet).forEachIndexed { pageIndex, pageSnaps ->
             val info = android.graphics.pdf.PdfDocument.PageInfo
@@ -168,19 +178,27 @@ private fun drawTiledPage(
     val k = option.scale
     snaps.forEachIndexed { i, snap ->
         val cell = cellRect(option, i)
-        val drawnW = content.width() * k
-        val drawnH = content.height() * k
         canvas.save()
-        canvas.translate(cell.left + (cell.width() - drawnW) / 2f, cell.top + (cell.height() - drawnH) / 2f)
+        // Центр ячейки ← центр напечатанного; при повороте бланк лежит на боку.
+        canvas.translate(cell.centerX(), cell.centerY())
+        if (option.rotated) canvas.rotate(-90f)
         canvas.scale(k, k)
-        canvas.translate(-content.left, -content.top)
+        canvas.translate(-content.centerX(), -content.centerY())
         canvas.clipRect(content)
         drawBlankSheet(canvas, snap, withBackground = true)
         canvas.restore()
     }
 }
 
-/** Бледные пунктирные линии между бланками — по ним удобно резать лист. Они вне рамок и не мешают проверке. */
+/** Пунктир для разрезания: заметный на бумаге, но серый — не путается с рамкой бланка. */
+private fun cutLinePaint() = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+    style = Paint.Style.STROKE
+    strokeWidth = 1.1f
+    color = Color.parseColor("#7A7A7A")
+    pathEffect = DashPathEffect(floatArrayOf(7f, 5f), 0f)
+}
+
+/** Пунктирные линии между бланками — по ним режут лист. Они вне рамок и не мешают проверке. */
 private fun drawCutLines(canvas: Canvas, option: BlankTileOption, paint: Paint) {
     for (col in 1 until option.cols) {
         val x = cellRect(option, col).left - CELL_GAP / 2f
@@ -203,6 +221,7 @@ internal fun renderTiledPreview(snapshot: BlankSheetExportSnapshot, option: Blan
     } else {
         val content = blankContentBounds(snapshot)
         drawTiledPage(c, List(option.perSheet) { snapshot }, content, option)
+        drawCutLines(c, option, cutLinePaint())
     }
     return bmp
 }

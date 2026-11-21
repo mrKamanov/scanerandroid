@@ -68,6 +68,11 @@ fun BatchResultsRoute(navController: NavHostController) {
         mutableStateMapOf<Int, BatchManualName>().apply { putAll(run?.manualNames.orEmpty()) }
     }
     val roster = remember { com.tscan.scanertestov.feature.journals.JournalRepository(context).loadAll() }
+    // Вариант, выбранный учителем для работы, где номер варианта на бланке не прочитался.
+    val manualVariants = remember(runId) {
+        mutableStateMapOf<Int, Int>().apply { putAll(run?.manualVariants.orEmpty()) }
+    }
+    val variantKeys = run?.variantKeys.orEmpty()
     val effectiveDecisions: Map<String, Boolean> = autoDecisions + fixedDecisions
     val fixedUiItems = buildFixedUiItems(
         runItems = runItems,
@@ -82,6 +87,8 @@ fun BatchResultsRoute(navController: NavHostController) {
             explicitDecisions = fixedDecisions,
             manualNames = manualNames,
             gradingCriteria = gradingCriteria,
+            manualVariants = manualVariants,
+            variantKeys = variantKeys,
         )
     } else {
         listOf(
@@ -178,7 +185,16 @@ fun BatchResultsRoute(navController: NavHostController) {
                     BatchLastRunStore.setManualName(context.applicationContext, action.itemIndex, value)
                     // Если работа уже в отчёте — обновляем там имя.
                     if (exportedIndices[action.itemIndex] == true) {
-                        val e = buildResultEntries(runItems, effectiveDecisions, fixedDecisions, manualNames, gradingCriteria)
+                        val e = buildResultEntries(runItems, effectiveDecisions, fixedDecisions, manualNames, gradingCriteria, manualVariants, variantKeys)
+                        e.getOrNull(action.itemIndex)?.toReportsSnapshot(run, action.itemIndex)?.let { ReportsSelectedWorksStore.upsert(it) }
+                    }
+                }
+                is BatchResultsAction.SetVariant -> {
+                    manualVariants[action.itemIndex] = action.variant
+                    BatchLastRunStore.setManualVariant(context.applicationContext, action.itemIndex, action.variant)
+                    // Если работа уже в отчёте — там обновляются вариант, баллы и оценка.
+                    if (exportedIndices[action.itemIndex] == true) {
+                        val e = buildResultEntries(runItems, effectiveDecisions, fixedDecisions, manualNames, gradingCriteria, manualVariants, variantKeys)
                         e.getOrNull(action.itemIndex)?.toReportsSnapshot(run, action.itemIndex)?.let { ReportsSelectedWorksStore.upsert(it) }
                     }
                 }
@@ -224,8 +240,16 @@ private fun buildResultEntries(
     explicitDecisions: Map<String, Boolean>,
     manualNames: Map<Int, BatchManualName>,
     gradingCriteria: GradingCriteriaConfig,
-): List<BatchResultEntryState> = runItems.mapIndexed { itemIndex, item ->
+    manualVariants: Map<Int, Int> = emptyMap(),
+    variantKeys: Map<Int, List<Set<Int>>> = emptyMap(),
+): List<BatchResultEntryState> = runItems.mapIndexed { itemIndex, runItem ->
     val manual = manualNames[itemIndex]
+    // Вариант выбран учителем — проверяем по ключу этого варианта (кружки уже распознаны, переснимать не нужно).
+    val chosenVariant = manualVariants[itemIndex]?.takeIf { it in variantKeys }
+    val item = if (chosenVariant != null) {
+        runItem.copy(config = runItem.config.copy(answerKey = variantKeys.getValue(chosenVariant)), detectedVariant = chosenVariant)
+    } else runItem
+    val variantUnread = runItem.variantUnread && chosenVariant == null
     val error = item.error
     if (error != null) {
         return@mapIndexed BatchResultEntryState(
@@ -328,6 +352,9 @@ private fun buildResultEntries(
         nameAssignedManually = manual != null,
         studentNote = if (manual != null) null else item.studentNote,
         warning = if (manual != null) item.warning?.takeIf { it.startsWith("Выдан") } else item.warning,
+        variantUnread = variantUnread,
+        variantManual = chosenVariant != null,
+        variantChoices = if (runItem.variantUnread) variantKeys.size else 0,
         reportStrictScoring = item.config.strictScoring,
         reportPartialCompletedCount = partialCompletedCount,
         reportHasMultiChoiceQuestions = hasMultiChoiceQuestions,

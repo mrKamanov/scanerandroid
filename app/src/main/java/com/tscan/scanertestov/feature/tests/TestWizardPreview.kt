@@ -126,8 +126,17 @@ internal fun PreviewStep(
     val snapshot = remember(design, variants, differ, shownVariant) { snapFor(if (differ) shownVariant else null) }
 
     // ——— Лист: тот же код, что печать.
-    val sheet by produceState<Bitmap?>(null, snapshot) {
-        value = withContext(Dispatchers.Default) { runCatching { renderBlankSheetBitmap(snapshot, withBackground = true, scale = 1.6f) }.getOrNull() }
+    val tiles = remember(snapshot) { runCatching { blankTileOptions(snapshot) }.getOrDefault(emptyList()) }
+    var perSheet by remember { mutableStateOf(1) }
+    // Предпросмотр = печать: при «N на листе» — весь лист A4 с раскладкой и пунктиром для разрезания.
+    val tileOpt = tiles.firstOrNull { it.perSheet == perSheet && it.fits && perSheet > 1 }
+    val sheet by produceState<Bitmap?>(null, snapshot, tileOpt) {
+        value = withContext(Dispatchers.Default) {
+            runCatching {
+                if (tileOpt != null) com.tscan.scanertestov.feature.blankeditor.renderTiledPreview(snapshot, tileOpt, scale = 1.6f)
+                else renderBlankSheetBitmap(snapshot, withBackground = true, scale = 1.6f)
+            }.getOrNull()
+        }
     }
     var zoom by remember { mutableFloatStateOf(1f) }
     var shift by remember { mutableStateOf(Offset.Zero) }
@@ -198,8 +207,6 @@ internal fun PreviewStep(
     }
 
     // ——— Как печатать.
-    val tiles = remember(snapshot) { runCatching { blankTileOptions(snapshot) }.getOrDefault(emptyList()) }
-    var perSheet by remember { mutableStateOf(1) }
     var kind by remember { mutableStateOf(PrintKind.Pdf) }
     val students = produceState(emptyList<com.tscan.scanertestov.feature.journals.JournalStudent>()) {
         value = withContext(Dispatchers.IO) { JournalRepository(app).loadAll() }
@@ -279,11 +286,39 @@ internal fun PreviewStep(
                 }
             }
             if (kind != PrintKind.Picture) {
-                val fit = tiles.filter { it.fits }
-                if (fit.size > 1) {
+                // Выбор виден всегда: то, что не помещается без потери надёжности, — серое и с объяснением.
+                if (tiles.isNotEmpty()) {
                     Label("Бланков на листе A4")
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        fit.forEach { o -> Pill(if (o.perSheet == 1) "1 — во весь лист" else "${o.perSheet} — разрезать", perSheet == o.perSheet) { perSheet = o.perSheet } }
+                        tiles.forEach { o ->
+                            val title = if (o.perSheet == 1) "1 — во весь лист" else "${o.perSheet} — разрезать"
+                            if (o.fits) {
+                                Pill(title, perSheet == o.perSheet) { perSheet = o.perSheet }
+                            } else {
+                                Text(
+                                    title,
+                                    color = Scrapbook.InkMuted.copy(alpha = 0.6f),
+                                    modifier = Modifier
+                                        .heightIn(min = 40.dp)
+                                        .border(1.dp, Scrapbook.Ink.copy(alpha = 0.15f), RoundedCornerShape(999.dp))
+                                        .padding(horizontal = 16.dp, vertical = 9.dp),
+                                )
+                            }
+                        }
+                    }
+                    val blocked = tiles.filter { !it.fits }
+                    if (blocked.isNotEmpty()) {
+                        Hint(
+                            "${blocked.joinToString(" и ") { "${it.perSheet}" }} на листе — нельзя: кружки стали бы мельче 4 мм, " +
+                                "ученику трудно аккуратно закрасить. Поместится, если вопросов меньше или убрать надписи " +
+                                "(шаблон «Только сетка»).",
+                        )
+                    }
+                    if (perSheet > 1) {
+                        Hint(
+                            if (perSheet == 2) "Бланки лягут на бок, по одному на каждую половину листа. Между ними пунктир — разрежьте по нему."
+                            else "Между бланками пунктир — разрежьте лист по нему. Кружки мельче — попросите закрашивать аккуратно.",
+                        )
                     }
                 }
             }

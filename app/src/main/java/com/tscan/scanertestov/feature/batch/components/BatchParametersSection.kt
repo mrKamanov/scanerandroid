@@ -103,7 +103,7 @@ fun BatchParametersSection(
             StepperField(
                 title = "Сколько вариантов ответа в вопросе",
                 value = state.choicesCount,
-                limitsLabel = "от 2 до 9",
+                limitsLabel = "от 2 до 6",
                 onMinus = { onAction(BatchProcessingAction.SetChoicesCount(state.choicesCount - 1)) },
                 onPlus = { onAction(BatchProcessingAction.SetChoicesCount(state.choicesCount + 1)) },
                 enabled = !state.isProcessing

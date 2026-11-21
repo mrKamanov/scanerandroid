@@ -42,6 +42,10 @@ data class BatchRun(
     /** Тест, по которому проверяли (null — ключ вводили вручную). */
     val testId: String? = null,
     val testTitle: String? = null,
+    /** Ключи ответов по вариантам (для теста с 2+ вариантами) — чтобы перепроверить работу по другому варианту. */
+    val variantKeys: Map<Int, List<Set<Int>>> = emptyMap(),
+    /** Вариант, который учитель выбрал вручную, по номеру работы. */
+    val manualVariants: Map<Int, Int> = emptyMap(),
 )
 
 data class BatchManualName(val surname: String, val name: String, val className: String?)
@@ -52,6 +56,7 @@ object BatchLastRunStore {
     private const val RUN_FILE = "run.json"
     private const val DECISIONS_FILE = "decisions.json"
     private const val NAMES_FILE = "names.json"
+    private const val VARIANTS_FILE = "variants.json"
     private const val THUMB_MAX_SIDE = 240
     private const val SHEET_JPEG_QUALITY = 88
 
@@ -137,10 +142,11 @@ object BatchLastRunStore {
         gradingCriteriaJson: String? = null,
         testId: String? = null,
         testTitle: String? = null,
+        variantKeys: Map<Int, List<Set<Int>>> = emptyMap(),
     ) {
         val run = BatchRun(
             runId = runId, createdAtMs = createdAtMs, items = items, gradingCriteriaJson = gradingCriteriaJson,
-            testId = testId, testTitle = testTitle,
+            testId = testId, testTitle = testTitle, variantKeys = variantKeys,
         )
         synchronized(lock) {
             currentRun = run
@@ -151,6 +157,7 @@ object BatchLastRunStore {
             writeAtomically(File(dir, RUN_FILE), runToJson(run).toString())
             File(dir, DECISIONS_FILE).delete()
             File(dir, NAMES_FILE).delete()
+            File(dir, VARIANTS_FILE).delete()
             deleteOtherRuns(context, keepRunId = runId)
         }.onFailure { Log.w(TAG, "Не удалось сохранить прогон", it) }
     }
@@ -185,6 +192,19 @@ object BatchLastRunStore {
             }
             writeAtomically(File(runDir(context, updated.runId), NAMES_FILE), obj.toString())
         }.onFailure { Log.w(TAG, "Не удалось сохранить имена", it) }
+    }
+
+    /** Учитель выбрал вариант работы вручную. */
+    fun setManualVariant(context: Context, itemIndex: Int, variant: Int) {
+        val updated = synchronized(lock) {
+            val run = currentRun ?: return
+            run.copy(manualVariants = run.manualVariants + (itemIndex to variant)).also { currentRun = it }
+        }
+        runCatching {
+            val obj = JSONObject()
+            updated.manualVariants.forEach { (k, v) -> obj.put(k.toString(), v) }
+            writeAtomically(File(runDir(context, updated.runId), VARIANTS_FILE), obj.toString())
+        }.onFailure { Log.w(TAG, "Не удалось сохранить варианты", it) }
     }
 
     /** Полноразмерный кадр бланка для детального просмотра. Блокирующий: вызывать в фоне. */
@@ -236,7 +256,16 @@ object BatchLastRunStore {
         } else {
             emptyMap()
         }
-        return run.copy(decisions = decisions, manualNames = names)
+        val variantsFile = File(latest, VARIANTS_FILE)
+        val manualVariants = if (variantsFile.exists()) {
+            runCatching {
+                val o = JSONObject(variantsFile.readText())
+                buildMap { o.keys().forEach { k -> put(k.toInt(), o.getInt(k)) } }
+            }.getOrDefault(emptyMap())
+        } else {
+            emptyMap()
+        }
+        return run.copy(decisions = decisions, manualNames = names, manualVariants = manualVariants)
     }
 
     private fun deleteOtherRuns(context: Context, keepRunId: String) {
@@ -278,6 +307,11 @@ object BatchLastRunStore {
         run.gradingCriteriaJson?.let { put("grading", it) }
         run.testId?.let { put("testId", it) }
         run.testTitle?.let { put("testTitle", it) }
+        if (run.variantKeys.isNotEmpty()) {
+            put("vkeys", JSONObject().apply {
+                run.variantKeys.forEach { (v, key) -> put(v.toString(), JSONArray().apply { key.forEach { put(intSetToJson(it)) } }) }
+            })
+        }
     }
 
     internal fun runFromJson(o: JSONObject, dir: File): BatchRun {
@@ -290,6 +324,14 @@ object BatchLastRunStore {
             gradingCriteriaJson = if (o.has("grading") && !o.isNull("grading")) o.optString("grading") else null,
             testId = o.optString("testId").takeIf { it.isNotBlank() },
             testTitle = o.optString("testTitle").takeIf { it.isNotBlank() },
+            variantKeys = o.optJSONObject("vkeys")?.let { vk ->
+                buildMap {
+                    vk.keys().forEach { k ->
+                        val a = vk.getJSONArray(k)
+                        k.toIntOrNull()?.let { put(it, List(a.length()) { i -> intSetFromJson(a.getJSONArray(i)) }) }
+                    }
+                }
+            }.orEmpty(),
         )
     }
 
@@ -306,6 +348,7 @@ object BatchLastRunStore {
         item.nameCropPath?.let { put("nameCrop", it) }
         item.studentNote?.let { put("studentNote", it) }
         item.warning?.let { put("warning", it) }
+        if (item.variantUnread) put("vunread", true)
         item.omr?.let { put("omr", omrToJson(it)) }
     }
 
@@ -329,6 +372,7 @@ object BatchLastRunStore {
             nameCropPath = o.optStringOrNull("nameCrop")?.takeIf { File(it).exists() },
             studentNote = o.optStringOrNull("studentNote"),
             warning = o.optStringOrNull("warning"),
+            variantUnread = o.optBoolean("vunread", false),
         )
     }
 

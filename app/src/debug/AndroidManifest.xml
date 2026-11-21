@@ -17,5 +17,8 @@
         <activity
             android:name=".debug.BlankRoundTripActivity"
             android:exported="true" />
+        <activity
+            android:name=".debug.TilingBenchActivity"
+            android:exported="true" />
     </application>
 </manifest>

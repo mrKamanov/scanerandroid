@@ -13,7 +13,7 @@ data class InstructionTopic(
 /** Зацикленная анимация-подсказка внутри раздела (рисуется кодом, см. FillingAnimations.kt). */
 enum class InstructionAnimation {
     FillBubble, WrongMarks, EraseAndRefill, CrossOutAndRefill,
-    PhotoFraming, LiveCheck, NamedCode, VariantSheets, ExcelImport,
+    PhotoFraming, LiveCheck, NamedCode, VariantSheets, ExcelImport, Tiling, WordInsert,
 }
 
 data class InstructionSection(

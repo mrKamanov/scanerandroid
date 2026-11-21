@@ -94,7 +94,7 @@ fun BatchProcessingRoute(navController: NavHostController) {
     }
 
     fun clampQuestions(value: Int): Int = value.coerceIn(1, 35)
-    fun clampChoices(value: Int): Int = value.coerceIn(2, 9)
+    fun clampChoices(value: Int): Int = value.coerceIn(2, 6)
     fun normalizeAnswers(questions: Int, choices: Int, source: List<Set<Int>>): List<Set<Int>> {
         return List(questions) { idx ->
             val valid = source.getOrNull(idx)
@@ -874,6 +874,7 @@ fun BatchProcessingRoute(navController: NavHostController) {
                                             nameCropPath = item.nameCropPath,
                                             studentNote = who.note,
                                             warning = who.warning,
+                                            variantUnread = snapshot.answerKeyVariantsCount > 1 && variant == null,
                                             omr = omr,
                                             error = error,
                                         )
@@ -898,7 +899,14 @@ fun BatchProcessingRoute(navController: NavHostController) {
                                         state = state.copy(statusMessage = "Проверяем работы… ${index + 1} из ${items.size}")
                                     }
                                 }
-                                BatchLastRunStore.publish(appContext, runId, createdAt, out, snapshot.gradingCriteriaJson, snapshot.testId, snapshot.testTitle)
+                                BatchLastRunStore.publish(
+                                    appContext, runId, createdAt, out, snapshot.gradingCriteriaJson, snapshot.testId, snapshot.testTitle,
+                                    variantKeys = if (snapshot.answerKeyVariantsCount > 1) {
+                                        (1..snapshot.answerKeyVariantsCount).associateWith { v ->
+                                            snapshot.correctAnswersByVariant[v] ?: snapshot.correctAnswersByVariant[1] ?: snapshot.correctAnswers
+                                        }
+                                    } else emptyMap(),
+                                )
                                 out
                             }
                             state = state.copy(

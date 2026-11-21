@@ -55,7 +55,7 @@ object BatchProcessingPersistence {
     private fun parse(json: String): BatchProcessingState {
         val o = JSONObject(json)
         val questions = o.optInt("q", 5).coerceIn(1, 35)
-        val choices = o.optInt("c", 4).coerceIn(2, 9)
+        val choices = o.optInt("c", 4).coerceIn(2, 6)
         val akCount = o.optInt("akCount", 0).coerceIn(0, 4)
         val itemsJson = o.optJSONArray("workItems") ?: JSONArray()
         val workItems = List(itemsJson.length()) { i -> parseWorkItem(itemsJson.getJSONObject(i)) }

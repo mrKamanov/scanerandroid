@@ -434,7 +434,11 @@ fun TestWizardRoute(navController: NavHostController) {
                         )
                         if (!templateMode) {
                             ShellBubbleOutlinedButton(text = "Надписи и место бланка на листе", onClick = { editSheet = true })
-                            Hint("Название, поле имени, размер и положение рамки. Можно не трогать — шаблон уже всё расставил.")
+                            Hint(
+                                "Здесь можно поправить, как бланк лежит на листе: поменять текст названия и строк над бланком, " +
+                                    "убрать или вернуть поле имени, сдвинуть и увеличить сетку кружков. Можно не трогать — шаблон " +
+                                    "уже всё расставил.",
+                            )
                         }
                     }
                     TestWizardStep.Questions -> QuestionsStep(
@@ -959,7 +963,13 @@ private fun SheetStep(
         SheetElement.Grid -> "Сетка кружков"
     }
 
+    if (design.formatV2 && selected == SheetElement.Variant) selected = SheetElement.Grid
+
     Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Hint(
+            "Так лист выйдет на бумаге. Нажмите на надпись или сетку на листе (или на ярлык под ним) и двигайте " +
+                "пальцем или стрелками.",
+        )
         if (perVariant) {
             Segmented((0..variants).toList(), mode, label = { if (it == 0) "Все" else "Вар. $it" }) { mode = it }
         }
@@ -1049,7 +1059,10 @@ private fun SheetStep(
                 ElementChip(b.label, b.isVisible, selected == SheetElement.Text(b.id)) { selected = SheetElement.Text(b.id) }
             }
             ElementChip("Поле имени", design.nameMarker, selected == SheetElement.Name) { selected = SheetElement.Name }
-            ElementChip("Номер варианта", design.variantMarker, selected == SheetElement.Variant) { selected = SheetElement.Variant }
+            // На новом бланке строка «Вариант» появляется сама при 2+ вариантах — включать её здесь нечего.
+            if (!design.formatV2) {
+                ElementChip("Номер варианта", design.variantMarker, selected == SheetElement.Variant) { selected = SheetElement.Variant }
+            }
         }
 
         // ——— Размер и сдвиг выбранного (закреплены) ———
@@ -1169,6 +1182,18 @@ private fun SheetStep(
                             "Поле имени и номер варианта двигаются вместе с ней. Нажатие на кружок убирает его" +
                             (if (perVariant) " — с бланков всех вариантов или, если вверху выбран вариант, только с его бланка." else ".")
                     )
+                    if (design.formatV2) {
+                        Hint(
+                            if (variants > 1) {
+                                "Строка кружков «Вариант» над сеткой стоит сама, потому что у теста $variants " +
+                                    "${ruPlural(variants, "вариант", "варианта", "вариантов")}: ученик закрашивает номер своего варианта, " +
+                                    "и работа проверяется по его ключу."
+                            } else {
+                                "Строка кружков «Вариант» появится над сеткой сама, если на этапе «Вопросы и кружки» указать " +
+                                    "2 и больше вариантов. При одном варианте она не нужна."
+                            },
+                        )
+                    }
                     if (gridOverlapsText(design)) {
                         Text(
                             "Сетка или поля над ней заезжают на надпись. Сдвиньте сетку ниже или надпись выше — " +

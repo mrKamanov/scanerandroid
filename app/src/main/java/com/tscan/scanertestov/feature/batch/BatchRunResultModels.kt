@@ -30,6 +30,8 @@ data class BatchRunItemResult(
     val studentNote: String? = null,
     /** Что не сходится: вариант не тот, что выдан; код не выдавался по тесту. */
     val warning: String? = null,
+    /** У теста несколько вариантов, а на бланке номер варианта не прочитан — проверено по ключу варианта 1. */
+    val variantUnread: Boolean = false,
 )
 
 data class BatchFixedCellUiItem(
@@ -90,6 +92,12 @@ data class BatchResultEntryState(
     val nameAssignedManually: Boolean = false,
     val studentNote: String? = null,
     val warning: String? = null,
+    /** Номер варианта не прочитан, учитель его ещё не выбрал: проверено по ключу варианта 1. */
+    val variantUnread: Boolean = false,
+    /** Вариант выбрал учитель (номер — в [reportVariant]). */
+    val variantManual: Boolean = false,
+    /** Сколько вариантов можно выбрать (0 — выбор не нужен). */
+    val variantChoices: Int = 0,
 )
 
 internal fun fixedCellKey(itemIndex: Int, prediction: BatchCellPrediction): String =

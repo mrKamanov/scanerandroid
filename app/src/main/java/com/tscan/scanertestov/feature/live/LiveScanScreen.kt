@@ -204,9 +204,15 @@ fun LiveScanScreen(onBack: () -> Unit) {
     LaunchedEffect(Unit) { if (!permission) launcher.launch(Manifest.permission.CAMERA) }
 
     val presets = remember { BatchCriteriaRepository(app).getAll() }
+    // Ответы, введённые вручную (без теста); помнятся до следующего раза.
+    var manualKey by remember { mutableStateOf(LiveManualKey.load(app)) }
+    var manualOpen by remember { mutableStateOf(false) }
     var preset by remember {
         val savedId = prefs(app).getString("test", null)
-        mutableStateOf(presets.firstOrNull { it.id == savedId } ?: presets.firstOrNull())
+        mutableStateOf(
+            if (savedId == LiveManualKey.PRESET_ID) manualKey?.toPreset()
+            else presets.firstOrNull { it.id == savedId } ?: presets.firstOrNull(),
+        )
     }
     // Проверка — нейросетью: она различает исправления (OpenCV по доле чернил — нет).
     val method = LiveMethod.Model
@@ -513,14 +519,16 @@ fun LiveScanScreen(onBack: () -> Unit) {
         ) {
             PaperIconButton(Icons.AutoMirrored.Filled.ArrowBack, "Назад", Scrapbook.Paper, 42.dp, onBack)
             Box(Modifier.weight(1f)) {
-                PaperButton({ if (presets.isNotEmpty()) testMenu = true }, Scrapbook.Paper, Modifier.fillMaxWidth().height(42.dp)) {
+                PaperButton({ testMenu = true }, Scrapbook.Paper, Modifier.fillMaxWidth().height(42.dp)) {
                     Row(Modifier.padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            preset?.let { "Тест: ${it.name}" } ?: "Нет тестов",
+                            preset?.let { p ->
+                                if (p.id.startsWith(LiveManualKey.PRESET_ID)) "Вручную · ${p.questionsCount} вопр." else "Тест: ${p.name}"
+                            } ?: "Выбрать тест или ввести ответы",
                             fontFamily = Scrapbook.BodyFont, fontWeight = FontWeight.ExtraBold, fontSize = 14.sp,
                             color = Scrapbook.Ink, maxLines = 1, modifier = Modifier.weight(1f),
                         )
-                        if (presets.isNotEmpty()) Icon(Icons.Filled.ArrowDropDown, contentDescription = "Выбрать тест", tint = Scrapbook.Ink)
+                        Icon(Icons.Filled.ArrowDropDown, contentDescription = "Выбрать тест", tint = Scrapbook.Ink)
                     }
                 }
                 DropdownMenu(expanded = testMenu, onDismissRequest = { testMenu = false }) {
@@ -536,6 +544,33 @@ fun LiveScanScreen(onBack: () -> Unit) {
                             },
                         )
                     }
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                if (manualKey != null) "✎ Ответы вручную (изменить)" else "✎ Ввести ответы вручную, без теста",
+                                fontWeight = FontWeight.Bold,
+                            )
+                        },
+                        onClick = {
+                            testMenu = false
+                            manualOpen = true
+                        },
+                    )
+                }
+                if (manualOpen) {
+                    LiveManualKeyDialog(
+                        initial = manualKey ?: LiveManualKey.blank(),
+                        onDismiss = { manualOpen = false },
+                        onDone = { k ->
+                            manualOpen = false
+                            manualKey = k
+                            LiveManualKey.save(app, k)
+                            preset = k.toPreset()
+                            result = null
+                            controller.newSheet()
+                            prefs(app).edit().putString("test", LiveManualKey.PRESET_ID).apply()
+                        },
+                    )
                 }
             }
             PaperIconButton(
@@ -561,7 +596,7 @@ fun LiveScanScreen(onBack: () -> Unit) {
 
         // ——— Снизу: записка с итогом и кнопками.
         val status = when {
-            preset == null -> "Сначала создайте тест в «Мои тесты» — из него берутся правильные ответы."
+            preset == null -> "Выберите тест вверху или нажмите там «Ввести ответы вручную» — отметить правильные ответы можно прямо здесь."
             paused -> "Проверка на паузе. Нажмите ▶, чтобы продолжить."
             r != null && r.error == null -> null
             checking -> "Нашёл бланк — проверяю…"

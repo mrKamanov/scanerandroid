@@ -21,4 +21,6 @@ sealed interface BatchResultsAction {
     data class MarkFixedAsEmpty(val key: String) : BatchResultsAction
     /** «Чья работа?»: учитель выбрал ученика (или вписал вручную). */
     data class AssignStudent(val itemIndex: Int, val surname: String, val name: String, val className: String?) : BatchResultsAction
+    /** Вариант на бланке не прочитался — учитель выбрал его сам; работа перепроверяется по ключу этого варианта. */
+    data class SetVariant(val itemIndex: Int, val variant: Int) : BatchResultsAction
 }
